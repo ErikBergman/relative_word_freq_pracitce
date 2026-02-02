@@ -1,7 +1,3 @@
-Here’s the updated `README.md` with **Morfeusz2 integration** reflected across features, dependencies, and limitations:
-
----
-
 # 🇵🇱 Polish Vocabulary Extractor
 
 This is a personal NLP tool that helps language learners extract and prioritize vocabulary from any Polish text (e.g. articles, stories, blog posts). It identifies the **most "unusually" frequent** words by comparing the input text to general Polish usage.
@@ -11,6 +7,7 @@ This is a personal NLP tool that helps language learners extract and prioritize 
 ## ✨ Features
 
 * Cleans HTML and input noise using `BeautifulSoup`
+* Trims HTML to a configurable start/end range from `config.json`
 * Tokenizes and lemmatizes Polish words using `spaCy` and **Morfeusz2**
 * Clusters conjugated forms to their root lemma
 * Compares word frequencies to general Polish usage with `wordfreq`
@@ -37,6 +34,7 @@ python -m spacy download pl_core_news_sm
 ```
 polish_vocab_extractor/
 │
+├── config.json                  # Start/end markers for main content
 ├── data/
 │   └── sample_input.html         # Polish text file or pasted HTML
 │
@@ -59,7 +57,7 @@ polish_vocab_extractor/
 ## 🚀 How It Works
 
 1. **Input**: You provide a block of Polish text or HTML content.
-2. **Preprocessing**: `BeautifulSoup` strips tags, scripts, and formatting.
+2. **Preprocessing**: `config.json` defines the start/end markers for main content, then `BeautifulSoup` strips tags and formatting.
 3. **Tokenization**: `spaCy` splits text; `Morfeusz2` finds correct lemmas.
 4. **Frequency Comparison**:
 
