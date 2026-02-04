@@ -34,8 +34,17 @@ def lemmatize_token(token: str) -> str:
 
 def normalize_tokens(tokens: list[str]) -> list[str]:
     normalized: list[str] = []
+    lemma_forms: dict[str, set[str]] = {}
+    lemmas: list[str] = []
+
     for token in tokens:
-        normalized.append(token)
         lemma = lemmatize_token(token)
-        normalized.append(f"{lemma}*")
+        lemmas.append(lemma)
+        lemma_forms.setdefault(lemma, set()).add(token)
+
+    for token, lemma in zip(tokens, lemmas):
+        normalized.append(token)
+        if len(lemma_forms[lemma]) > 1:
+            normalized.append(f"{lemma}*")
+
     return normalized
