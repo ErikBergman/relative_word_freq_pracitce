@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from extractor import extract_text, load_config, tokenize, top_words
+from extractor import extract_text, load_config, normalize_tokens, tokenize, top_words
 
 
 def main() -> None:
@@ -21,6 +21,7 @@ def main() -> None:
 
     text = extract_text(args.input, start, end)
     tokens = tokenize(text)
+    tokens = normalize_tokens(tokens)
     for word, count in top_words(tokens, args.limit):
         print(f"{word}\t{count}")
 
