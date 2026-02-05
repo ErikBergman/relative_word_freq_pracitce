@@ -47,6 +47,11 @@ def main() -> None:
         action="store_true",
         help="Include words that appear only once",
     )
+    parser.add_argument(
+        "--allow-inflections-in-list",
+        action="store_true",
+        help="Include inflected forms in the top list (default shows only lemmas)",
+    )
     args = parser.parse_args()
 
     estimate_seconds = _estimate_spacy_load_seconds()
@@ -102,24 +107,65 @@ def main() -> None:
 
     if not use_rich:
         if args.plain:
-            for word, count in top_words(counts, args.limit):
-                if word.endswith("*"):
-                    lemma = word[:-1]
-                    forms = groups.get(lemma, {})
+            if args.allow_inflections_in_list:
+                for word, count in top_words(counts, args.limit):
+                    if word.endswith("*"):
+                        lemma = word[:-1]
+                        forms = groups.get(lemma, {})
+                        details = ", ".join(
+                            f"{form} {form_count}"
+                            for form, form_count in sorted(
+                                forms.items(), key=lambda item: item[1], reverse=True
+                            )
+                        )
+                        if details:
+                            print(f"{word}\t{count}\t({details})")
+                            continue
+                    print(f"{word}\t{count}")
+            else:
+                lemma_rows = []
+                for lemma, forms in groups.items():
+                    total = sum(forms.values())
+                    if total <= 1 and not args.allow_ones:
+                        continue
                     details = ", ".join(
                         f"{form} {form_count}"
                         for form, form_count in sorted(
                             forms.items(), key=lambda item: item[1], reverse=True
                         )
                     )
+                    lemma_rows.append((lemma, total, details))
+                lemma_rows.sort(key=lambda item: item[1], reverse=True)
+                for lemma, total, details in lemma_rows[: args.limit]:
                     if details:
-                        print(f"{word}\t{count}\t({details})")
-                        continue
-                print(f"{word}\t{count}")
+                        print(f"{lemma}\t{total}\t({details})")
+                    else:
+                        print(f"{lemma}\t{total}")
         else:
-            for word, count, score in score_words(counts, args.limit):
-                if word.endswith("*"):
-                    lemma = word[:-1]
+            if args.allow_inflections_in_list:
+                for word, count, score in score_words(counts, args.limit):
+                    if word.endswith("*"):
+                        lemma = word[:-1]
+                        forms = groups.get(lemma, {})
+                        details = ", ".join(
+                            f"{form} {form_count}"
+                            for form, form_count in sorted(
+                                forms.items(), key=lambda item: item[1], reverse=True
+                            )
+                        )
+                        if details:
+                            print(f"{word}\t{count}\t{score:.3f}\t({details})")
+                            continue
+                    print(f"{word}\t{count}\t{score:.3f}")
+            else:
+                lemma_counts = Counter(
+                    {lemma: sum(forms.values()) for lemma, forms in groups.items()}
+                )
+                if not args.allow_ones:
+                    lemma_counts = Counter(
+                        {k: v for k, v in lemma_counts.items() if v > 1}
+                    )
+                for lemma, total, score in score_words(lemma_counts, args.limit):
                     forms = groups.get(lemma, {})
                     details = ", ".join(
                         f"{form} {form_count}"
@@ -128,9 +174,9 @@ def main() -> None:
                         )
                     )
                     if details:
-                        print(f"{word}\t{count}\t{score:.3f}\t({details})")
-                        continue
-                print(f"{word}\t{count}\t{score:.3f}")
+                        print(f"{lemma}\t{total}\t{score:.3f}\t({details})")
+                    else:
+                        print(f"{lemma}\t{total}\t{score:.3f}")
         return
 
     console = Console()
@@ -139,25 +185,60 @@ def main() -> None:
     table.add_column("Count", justify="right")
     if args.plain:
         table.add_column("Forms", overflow="fold")
-        for word, count in top_words(counts, args.limit):
-            details = ""
-            if word.endswith("*"):
-                lemma = word[:-1]
-                forms = groups.get(lemma, {})
+        if args.allow_inflections_in_list:
+            for word, count in top_words(counts, args.limit):
+                details = ""
+                if word.endswith("*"):
+                    lemma = word[:-1]
+                    forms = groups.get(lemma, {})
+                    details = ", ".join(
+                        f"{form} {form_count}"
+                        for form, form_count in sorted(
+                            forms.items(), key=lambda item: item[1], reverse=True
+                        )
+                    )
+                table.add_row(word, str(count), details)
+        else:
+            lemma_rows = []
+            for lemma, forms in groups.items():
+                total = sum(forms.values())
+                if total <= 1 and not args.allow_ones:
+                    continue
                 details = ", ".join(
                     f"{form} {form_count}"
                     for form, form_count in sorted(
                         forms.items(), key=lambda item: item[1], reverse=True
                     )
                 )
-            table.add_row(word, str(count), details)
+                lemma_rows.append((lemma, total, details))
+            lemma_rows.sort(key=lambda item: item[1], reverse=True)
+            for lemma, total, details in lemma_rows[: args.limit]:
+                table.add_row(lemma, str(total), details)
     else:
         table.add_column("Score", justify="right")
         table.add_column("Forms", overflow="fold")
-        for word, count, score in score_words(counts, args.limit):
-            details = ""
-            if word.endswith("*"):
-                lemma = word[:-1]
+        if args.allow_inflections_in_list:
+            for word, count, score in score_words(counts, args.limit):
+                details = ""
+                if word.endswith("*"):
+                    lemma = word[:-1]
+                    forms = groups.get(lemma, {})
+                    details = ", ".join(
+                        f"{form} {form_count}"
+                        for form, form_count in sorted(
+                            forms.items(), key=lambda item: item[1], reverse=True
+                        )
+                    )
+                table.add_row(word, str(count), f"{score:.3f}", details)
+        else:
+            lemma_counts = Counter(
+                {lemma: sum(forms.values()) for lemma, forms in groups.items()}
+            )
+            if not args.allow_ones:
+                lemma_counts = Counter(
+                    {k: v for k, v in lemma_counts.items() if v > 1}
+                )
+            for lemma, total, score in score_words(lemma_counts, args.limit):
                 forms = groups.get(lemma, {})
                 details = ", ".join(
                     f"{form} {form_count}"
@@ -165,7 +246,7 @@ def main() -> None:
                         forms.items(), key=lambda item: item[1], reverse=True
                     )
                 )
-            table.add_row(word, str(count), f"{score:.3f}", details)
+                table.add_row(lemma, str(total), f"{score:.3f}", details)
     console.print(table)
 
 
