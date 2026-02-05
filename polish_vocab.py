@@ -42,6 +42,11 @@ def main() -> None:
         action="store_true",
         help="Use plain top list without wordfreq scoring",
     )
+    parser.add_argument(
+        "--allow-ones",
+        action="store_true",
+        help="Include words that appear only once",
+    )
     args = parser.parse_args()
 
     estimate_seconds = _estimate_spacy_load_seconds()
@@ -89,6 +94,8 @@ def main() -> None:
             progress.advance(task_count, 1)
 
     counts = Counter(tokens)
+    if not args.allow_ones:
+        counts = Counter({k: v for k, v in counts.items() if v > 1})
     for lemma, forms in groups.items():
         if len(forms) > 1:
             counts[f"{lemma}*"] = sum(forms.values())
