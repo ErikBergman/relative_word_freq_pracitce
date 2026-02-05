@@ -33,7 +33,7 @@ def tokenize(text: str) -> list[str]:
                 nxt_text = nxt.text.lower()
                 if not WORD_RE.fullmatch(nxt_text):
                     continue
-                case_val = nxt.morph.get("Case")
+                case_val = nxt.morph.get("Case", None)
                 if case_val:
                     case = case_val[0]
                 break
