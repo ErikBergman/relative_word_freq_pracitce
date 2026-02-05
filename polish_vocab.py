@@ -14,6 +14,7 @@ from extractor import (
     tokenize,
     top_words,
 )
+from extractor.frequency import score_words
 
 try:
     from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
@@ -32,6 +33,11 @@ def main() -> None:
         "--config", type=Path, default=Path("config.json"), help="Path to config JSON"
     )
     parser.add_argument("--limit", type=int, default=50, help="Number of top words")
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="Use plain top list without wordfreq scoring",
+    )
     args = parser.parse_args()
 
     estimate_seconds = _estimate_spacy_load_seconds()
@@ -81,20 +87,36 @@ def main() -> None:
         if len(forms) > 1:
             counts[f"{lemma}*"] = sum(forms.values())
 
-    for word, count in top_words(counts, args.limit):
-        if word.endswith("*"):
-            lemma = word[:-1]
-            forms = groups.get(lemma, {})
-            details = ", ".join(
-                f"{form} {form_count}"
-                for form, form_count in sorted(
-                    forms.items(), key=lambda item: item[1], reverse=True
+    if args.plain:
+        for word, count in top_words(counts, args.limit):
+            if word.endswith("*"):
+                lemma = word[:-1]
+                forms = groups.get(lemma, {})
+                details = ", ".join(
+                    f"{form} {form_count}"
+                    for form, form_count in sorted(
+                        forms.items(), key=lambda item: item[1], reverse=True
+                    )
                 )
-            )
-            if details:
-                print(f"{word}\t{count}\t({details})")
-                continue
-        print(f"{word}\t{count}")
+                if details:
+                    print(f"{word}\t{count}\t({details})")
+                    continue
+            print(f"{word}\t{count}")
+    else:
+        for word, count, score in score_words(counts, args.limit):
+            if word.endswith("*"):
+                lemma = word[:-1]
+                forms = groups.get(lemma, {})
+                details = ", ".join(
+                    f"{form} {form_count}"
+                    for form, form_count in sorted(
+                        forms.items(), key=lambda item: item[1], reverse=True
+                    )
+                )
+                if details:
+                    print(f"{word}\t{count}\t{score:.3f}\t({details})")
+                    continue
+            print(f"{word}\t{count}\t{score:.3f}")
 
 
 if __name__ == "__main__":
