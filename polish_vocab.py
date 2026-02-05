@@ -66,7 +66,7 @@ def main() -> None:
 
         text = extract_text(args.input, start, end)
         tokens = tokenize(text)
-        groups = lemma_groups(tokens)
+        groups = lemma_groups(tokens, text=text)
     else:
         with Progress(
             TextColumn("{task.description}"),
@@ -95,7 +95,7 @@ def main() -> None:
             progress.advance(task_clean, 1)
 
             tokens = tokenize(text, progress=updater(task_tokenize))
-            groups = lemma_groups(tokens, progress=updater(task_lemma))
+            groups = lemma_groups(tokens, text=text, progress=updater(task_lemma))
             progress.advance(task_count, 1)
 
     counts = Counter(tokens)
