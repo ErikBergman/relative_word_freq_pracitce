@@ -17,9 +17,13 @@ from extractor import (
 from extractor.frequency import score_words
 
 try:
+    from rich.console import Console
     from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
+    from rich.table import Table
 except Exception:  # pragma: no cover - optional dependency
     Progress = None
+    Console = None
+    Table = None
 
 
 def _estimate_spacy_load_seconds() -> int:
@@ -43,7 +47,9 @@ def main() -> None:
     estimate_seconds = _estimate_spacy_load_seconds()
     preload_spacy(estimate_seconds, show_progress=Progress is not None)
 
-    if Progress is None:
+    use_rich = Progress is not None and Console is not None and Table is not None
+
+    if not use_rich:
         config = load_config(args.config)
         start = config["start"]
         end = config["end"]
@@ -87,8 +93,47 @@ def main() -> None:
         if len(forms) > 1:
             counts[f"{lemma}*"] = sum(forms.values())
 
+    if not use_rich:
+        if args.plain:
+            for word, count in top_words(counts, args.limit):
+                if word.endswith("*"):
+                    lemma = word[:-1]
+                    forms = groups.get(lemma, {})
+                    details = ", ".join(
+                        f"{form} {form_count}"
+                        for form, form_count in sorted(
+                            forms.items(), key=lambda item: item[1], reverse=True
+                        )
+                    )
+                    if details:
+                        print(f"{word}\t{count}\t({details})")
+                        continue
+                print(f"{word}\t{count}")
+        else:
+            for word, count, score in score_words(counts, args.limit):
+                if word.endswith("*"):
+                    lemma = word[:-1]
+                    forms = groups.get(lemma, {})
+                    details = ", ".join(
+                        f"{form} {form_count}"
+                        for form, form_count in sorted(
+                            forms.items(), key=lambda item: item[1], reverse=True
+                        )
+                    )
+                    if details:
+                        print(f"{word}\t{count}\t{score:.3f}\t({details})")
+                        continue
+                print(f"{word}\t{count}\t{score:.3f}")
+        return
+
+    console = Console()
+    table = Table(show_lines=False)
+    table.add_column("Word", overflow="fold")
+    table.add_column("Count", justify="right")
     if args.plain:
+        table.add_column("Forms", overflow="fold")
         for word, count in top_words(counts, args.limit):
+            details = ""
             if word.endswith("*"):
                 lemma = word[:-1]
                 forms = groups.get(lemma, {})
@@ -98,12 +143,12 @@ def main() -> None:
                         forms.items(), key=lambda item: item[1], reverse=True
                     )
                 )
-                if details:
-                    print(f"{word}\t{count}\t({details})")
-                    continue
-            print(f"{word}\t{count}")
+            table.add_row(word, str(count), details)
     else:
+        table.add_column("Score", justify="right")
+        table.add_column("Forms", overflow="fold")
         for word, count, score in score_words(counts, args.limit):
+            details = ""
             if word.endswith("*"):
                 lemma = word[:-1]
                 forms = groups.get(lemma, {})
@@ -113,10 +158,8 @@ def main() -> None:
                         forms.items(), key=lambda item: item[1], reverse=True
                     )
                 )
-                if details:
-                    print(f"{word}\t{count}\t{score:.3f}\t({details})")
-                    continue
-            print(f"{word}\t{count}\t{score:.3f}")
+            table.add_row(word, str(count), f"{score:.3f}", details)
+    console.print(table)
 
 
 if __name__ == "__main__":
