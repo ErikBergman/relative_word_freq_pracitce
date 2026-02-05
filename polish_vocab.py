@@ -60,7 +60,7 @@ def main() -> None:
             BarColumn(),
             TextColumn("{task.completed}/{task.total}"),
             TimeElapsedColumn(),
-        ) as progress:
+        ) as progress: # type: ignore
             def updater(task_id):
                 def _update(total: int | None, advance: int) -> None:
                     if total is not None:
@@ -166,8 +166,8 @@ def main() -> None:
                         print(f"{lemma}\t{total}\t{score:.3f}")
         return
 
-    console = Console()
-    table = Table(show_lines=False)
+    console = Console() # type: ignore
+    table = Table(show_lines=False) # type: ignore
     table.add_column("Word", overflow="fold")
     table.add_column("Count", justify="right")
     if args.plain:
