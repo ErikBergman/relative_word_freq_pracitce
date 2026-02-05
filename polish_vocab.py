@@ -5,15 +5,7 @@ from pathlib import Path
 
 from collections import Counter
 
-from extractor import (
-    extract_text,
-    lemma_groups,
-    load_config,
-    preload_spacy,
-    spacy_cached,
-    tokenize,
-    top_words,
-)
+from extractor import extract_text, lemma_groups, load_config, tokenize, top_words
 from extractor.frequency import score_words
 
 try:
@@ -26,8 +18,6 @@ except Exception:  # pragma: no cover - optional dependency
     Table = None
 
 
-def _estimate_spacy_load_seconds() -> int:
-    return 3 if spacy_cached() else 90
 
 
 def main() -> None:
@@ -54,9 +44,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    estimate_seconds = _estimate_spacy_load_seconds()
-    preload_spacy(estimate_seconds, show_progress=Progress is not None)
-
     use_rich = Progress is not None and Console is not None and Table is not None
 
     if not use_rich:
@@ -66,7 +53,7 @@ def main() -> None:
 
         text = extract_text(args.input, start, end)
         tokens = tokenize(text)
-        groups = lemma_groups(tokens)
+        groups = lemma_groups(tokens, text=text)
     else:
         with Progress(
             TextColumn("{task.description}"),
@@ -95,7 +82,7 @@ def main() -> None:
             progress.advance(task_clean, 1)
 
             tokens = tokenize(text, progress=updater(task_tokenize))
-            groups = lemma_groups(tokens, progress=updater(task_lemma))
+            groups = lemma_groups(tokens, text=text, progress=updater(task_lemma))
             progress.advance(task_count, 1)
 
     counts = Counter(tokens)
