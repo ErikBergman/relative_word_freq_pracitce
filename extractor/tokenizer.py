@@ -10,10 +10,6 @@ _NLP = None
 _LEMMA_CACHE: dict[str, str] = {}
 
 
-def tokenize(text: str) -> list[str]:
-    return WORD_RE.findall(text.lower())
-
-
 def _load_spacy():
     global _NLP
     if _NLP is None:
@@ -21,9 +17,47 @@ def _load_spacy():
     return _NLP
 
 
+def tokenize(text: str) -> list[str]:
+    nlp = _load_spacy()
+    doc = nlp(text)
+    tokens: list[str] = []
+
+    for idx, tok in enumerate(doc):
+        token_text = tok.text.lower()
+        if not WORD_RE.fullmatch(token_text):
+            continue
+
+        if token_text == "z":
+            case = None
+            for nxt in doc[idx + 1 :]:
+                nxt_text = nxt.text.lower()
+                if not WORD_RE.fullmatch(nxt_text):
+                    continue
+                case_val = nxt.morph.get("Case")
+                if case_val:
+                    case = case_val[0]
+                break
+
+            if case == "Ins":
+                tokens.append("z (instr.)")
+            elif case == "Gen":
+                tokens.append("z (gen.)")
+            else:
+                tokens.append("z")
+            continue
+
+        tokens.append(token_text)
+
+    return tokens
+
+
 def lemmatize_token(token: str) -> str:
     if token in _LEMMA_CACHE:
         return _LEMMA_CACHE[token]
+
+    if token.startswith("z (") and token.endswith(")"):
+        _LEMMA_CACHE[token] = token
+        return token
 
     nlp = _load_spacy()
     doc = nlp(token)
@@ -32,27 +66,13 @@ def lemmatize_token(token: str) -> str:
     return lemma
 
 
-def normalize_tokens(tokens: list[str]) -> list[str]:
-    normalized: list[str] = []
-    lemma_forms: dict[str, set[str]] = {}
-    lemmas: list[str] = []
-
-    for token in tokens:
-        lemma = lemmatize_token(token)
-        lemmas.append(lemma)
-        lemma_forms.setdefault(lemma, set()).add(token)
-
-    for token, lemma in zip(tokens, lemmas):
-        normalized.append(token)
-        if len(lemma_forms[lemma]) > 1:
-            normalized.append(f"{lemma}*")
-
-    return normalized
-
-
 def lemma_groups(tokens: list[str]) -> dict[str, dict[str, int]]:
     groups: dict[str, dict[str, int]] = {}
-    missing = [t for t in dict.fromkeys(tokens) if t not in _LEMMA_CACHE]
+    missing = [
+        t
+        for t in dict.fromkeys(tokens)
+        if t not in _LEMMA_CACHE and not (t.startswith("z (") and t.endswith(")"))
+    ]
     if missing:
         nlp = _load_spacy()
         for doc in nlp.pipe(missing, batch_size=256):
