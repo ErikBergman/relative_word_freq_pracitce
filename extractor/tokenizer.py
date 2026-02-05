@@ -1,96 +1,82 @@
 from __future__ import annotations
 
 import re
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Iterable
 
-import spacy
+from ufal.udpipe import Model, Pipeline
 
 
 WORD_RE = re.compile(r"[\wąćęłńóśźż]+", re.IGNORECASE)
-_NLP = None
+_UDPIPE_MODEL: Model | None = None
+_UDPIPE_PIPELINE: Pipeline | None = None
 _LEMMA_CACHE: dict[str, str] = {}
+_DEFAULT_MODEL_PATH = Path("data/udpipe/polish-pdb-ud-2.5-191206.udpipe")
 
 
-def _load_spacy():
-    global _NLP
-    if _NLP is None:
-        _NLP = spacy.load("pl_core_news_sm", disable=["parser", "ner", "senter"])
-    return _NLP
+def _load_udpipe(model_path: Path | None = None) -> Pipeline:
+    global _UDPIPE_MODEL, _UDPIPE_PIPELINE
+    if _UDPIPE_PIPELINE is not None:
+        return _UDPIPE_PIPELINE
+    path = model_path or _DEFAULT_MODEL_PATH
+    model = Model.load(str(path))
+    if model is None:
+        raise RuntimeError(f"Failed to load UDPipe model: {path}")
+    _UDPIPE_MODEL = model
+    _UDPIPE_PIPELINE = Pipeline(model, "tokenize", Pipeline.DEFAULT, Pipeline.DEFAULT, "conllu")
+    return _UDPIPE_PIPELINE
 
 
-def spacy_cached() -> bool:
-    return _NLP is not None
+def _feat_case(feats: str) -> str | None:
+    if not feats or feats == "_":
+        return None
+    for part in feats.split("|"):
+        if part.startswith("Case="):
+            return part.split("=", 1)[1]
+    return None
 
 
-def preload_spacy(estimate_seconds: int, show_progress: bool = True) -> None:
-    if _NLP is not None:
-        return
+def _iter_udpipe_tokens(
+    text: str,
+    progress: Callable[[int | None, int], None] | None = None,
+) -> list[tuple[str, str, str]]:
+    pipeline = _load_udpipe()
+    conllu = pipeline.process(text)
+    tokens: list[tuple[str, str, str]] = []
+    for line in conllu.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 6:
+            continue
+        token_id, form, lemma, _upos, _xpos, feats = parts[:6]
+        if "-" in token_id or "." in token_id:
+            continue
+        form_l = form.lower()
+        if not WORD_RE.fullmatch(form_l):
+            continue
+        lemma_l = lemma.lower() if lemma and lemma != "_" else form_l
+        tokens.append((form_l, lemma_l, feats))
 
-    if not show_progress:
-        _load_spacy()
-        return
-
-    try:
-        from rich.progress import BarColumn, Progress, TimeRemainingColumn
-    except Exception:  # pragma: no cover - optional dependency
-        _load_spacy()
-        return
-
-    import threading
-    import time
-
-    done = threading.Event()
-
-    def _load() -> None:
-        _load_spacy()
-        done.set()
-
-    thread = threading.Thread(target=_load, daemon=True)
-    thread.start()
-
-    with Progress(
-        "[progress.description]{task.description}",
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        TimeRemainingColumn(),
-    ) as progress:
-        task = progress.add_task("Loading spaCy model...", total=estimate_seconds)
-        start = time.perf_counter()
-        while not done.is_set():
-            elapsed = time.perf_counter() - start
-            progress.update(task, completed=min(elapsed, estimate_seconds))
-            time.sleep(0.1)
-        progress.update(task, completed=estimate_seconds)
+    if progress is not None:
+        progress(len(tokens), 0)
+    return tokens
 
 
 def tokenize(
     text: str,
     progress: Callable[[int | None, int], None] | None = None,
 ) -> list[str]:
-    nlp = _load_spacy()
-    doc = nlp(text)
+    stream = _iter_udpipe_tokens(text, progress=progress)
     tokens: list[str] = []
-    if progress is not None:
-        progress(len(doc), 0)
-
-    for idx, tok in enumerate(doc):
-        token_text = tok.text.lower()
-        if not WORD_RE.fullmatch(token_text):
-            if progress is not None:
-                progress(None, 1)
-            continue
-
-        if token_text == "z":
+    for idx, (form, _lemma, feats) in enumerate(stream):
+        if form == "z":
             case = None
-            for nxt in doc[idx + 1 :]:
-                nxt_text = nxt.text.lower()
-                if not WORD_RE.fullmatch(nxt_text):
-                    continue
-                case_val = nxt.morph.get("Case", None)
-                if case_val:
-                    case = case_val[0]
-                break
-
+            for _nxt_form, _nxt_lemma, nxt_feats in stream[idx + 1 :]:
+                case = _feat_case(nxt_feats)
+                if case:
+                    break
             if case == "Ins":
                 tokens.append("z (instr.)")
             elif case == "Gen":
@@ -100,11 +86,9 @@ def tokenize(
             if progress is not None:
                 progress(None, 1)
             continue
-
-        tokens.append(token_text)
+        tokens.append(form)
         if progress is not None:
             progress(None, 1)
-
     return tokens
 
 
@@ -116,38 +100,42 @@ def lemmatize_token(token: str) -> str:
         _LEMMA_CACHE[token] = token
         return token
 
-    nlp = _load_spacy()
-    doc = nlp(token)
-    lemma = doc[0].lemma_ if doc else token
+    pipeline = _load_udpipe()
+    conllu = pipeline.process(token)
+    lemma = token
+    for line in conllu.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            lemma = parts[2] or token
+            break
     _LEMMA_CACHE[token] = lemma
     return lemma
 
 
 def lemma_groups(
     tokens: list[str],
+    text: str | None = None,
     progress: Callable[[int | None, int], None] | None = None,
 ) -> dict[str, dict[str, int]]:
     groups: dict[str, dict[str, int]] = {}
-    missing = [
-        t
-        for t in dict.fromkeys(tokens)
-        if t not in _LEMMA_CACHE and not (t.startswith("z (") and t.endswith(")"))
-    ]
-    if missing:
-        nlp = _load_spacy()
-        if progress is not None:
-            progress(len(missing), 0)
-        for doc in nlp.pipe(missing, batch_size=256):
-            token = doc[0].text if doc else ""
-            lemma = doc[0].lemma_ if doc else token
-            _LEMMA_CACHE[token] = lemma
-            if progress is not None:
-                progress(None, 1)
-    elif progress is not None:
-        progress(1, 1)
-
-    for token in tokens:
-        lemma = _LEMMA_CACHE.get(token, token)
+    stream = _iter_udpipe_tokens(text or " ".join(tokens), progress=progress)
+    for idx, (form, lemma, feats) in enumerate(stream):
+        if form == "z":
+            case = None
+            for _nxt_form, _nxt_lemma, nxt_feats in stream[idx + 1 :]:
+                case = _feat_case(nxt_feats)
+                if case:
+                    break
+            if case == "Ins":
+                form = lemma = "z (instr.)"
+            elif case == "Gen":
+                form = lemma = "z (gen.)"
+            else:
+                form = lemma = "z"
         forms = groups.setdefault(lemma, {})
-        forms[token] = forms.get(token, 0) + 1
+        forms[form] = forms.get(form, 0) + 1
+        if progress is not None:
+            progress(None, 1)
     return groups
