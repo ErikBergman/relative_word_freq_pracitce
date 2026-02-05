@@ -57,6 +57,7 @@ def _iter_udpipe_tokens(
         if not WORD_RE.fullmatch(form_l):
             continue
         lemma_l = lemma.lower() if lemma and lemma != "_" else form_l
+        lemma_l = _normalize_lemma(form_l, lemma_l)
         tokens.append((form_l, lemma_l, feats))
 
     if progress is not None:
@@ -110,6 +111,7 @@ def lemmatize_token(token: str) -> str:
         if len(parts) >= 3:
             lemma = parts[2] or token
             break
+    lemma = _normalize_lemma(token, lemma.lower())
     _LEMMA_CACHE[token] = lemma
     return lemma
 
@@ -139,3 +141,42 @@ def lemma_groups(
         if progress is not None:
             progress(None, 1)
     return groups
+
+
+def _normalize_lemma(token_text: str, lemma: str) -> str:
+    if token_text.startswith("z (") and token_text.endswith(")"):
+        return token_text
+
+    try:
+        from wordfreq import zipf_frequency
+    except Exception:
+        return lemma
+
+    base_score = zipf_frequency(lemma, "pl")
+    if base_score >= 1.0:
+        return lemma
+
+    candidates = sorted(set(_candidates_from_lemma(lemma)))
+    for cand in candidates:
+        if zipf_frequency(cand, "pl") >= 1.0:
+            return cand
+
+    if zipf_frequency(token_text, "pl") >= 1.0:
+        return token_text
+
+    return lemma
+
+
+def _candidates_from_lemma(lemma: str) -> list[str]:
+    candidates: list[str] = []
+    if lemma.endswith("t"):
+        candidates.append(lemma[:-1] + "ć")
+    if lemma.endswith("c") and not lemma.endswith("cz"):
+        candidates.append(lemma[:-1] + "ć")
+    if lemma.endswith("nić"):
+        candidates.append(lemma[:-3] + "nieć")
+    if lemma.endswith("dzić"):
+        candidates.append(lemma[:-3] + "dzieć")
+    if lemma.endswith("zić"):
+        candidates.append(lemma[:-3] + "zieć")
+    return candidates
