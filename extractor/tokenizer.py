@@ -18,6 +18,51 @@ def _load_spacy():
     return _NLP
 
 
+def spacy_cached() -> bool:
+    return _NLP is not None
+
+
+def preload_spacy(estimate_seconds: int, show_progress: bool = True) -> None:
+    if _NLP is not None:
+        return
+
+    if not show_progress:
+        _load_spacy()
+        return
+
+    try:
+        from rich.progress import BarColumn, Progress, TimeRemainingColumn
+    except Exception:  # pragma: no cover - optional dependency
+        _load_spacy()
+        return
+
+    import threading
+    import time
+
+    done = threading.Event()
+
+    def _load() -> None:
+        _load_spacy()
+        done.set()
+
+    thread = threading.Thread(target=_load, daemon=True)
+    thread.start()
+
+    with Progress(
+        "[progress.description]{task.description}",
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("Loading spaCy model...", total=estimate_seconds)
+        start = time.perf_counter()
+        while not done.is_set():
+            elapsed = time.perf_counter() - start
+            progress.update(task, completed=min(elapsed, estimate_seconds))
+            time.sleep(0.1)
+        progress.update(task, completed=estimate_seconds)
+
+
 def tokenize(
     text: str,
     progress: Callable[[int | None, int], None] | None = None,

@@ -5,12 +5,24 @@ from pathlib import Path
 
 from collections import Counter
 
-from extractor import extract_text, lemma_groups, load_config, tokenize, top_words
+from extractor import (
+    extract_text,
+    lemma_groups,
+    load_config,
+    preload_spacy,
+    spacy_cached,
+    tokenize,
+    top_words,
+)
 
 try:
     from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 except Exception:  # pragma: no cover - optional dependency
     Progress = None
+
+
+def _estimate_spacy_load_seconds() -> int:
+    return 3 if spacy_cached() else 90
 
 
 def main() -> None:
@@ -21,6 +33,9 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=50, help="Number of top words")
     args = parser.parse_args()
+
+    estimate_seconds = _estimate_spacy_load_seconds()
+    preload_spacy(estimate_seconds, show_progress=Progress is not None)
 
     if Progress is None:
         config = load_config(args.config)
