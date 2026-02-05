@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Callable
 
 import spacy
 
@@ -17,14 +18,21 @@ def _load_spacy():
     return _NLP
 
 
-def tokenize(text: str) -> list[str]:
+def tokenize(
+    text: str,
+    progress: Callable[[int | None, int], None] | None = None,
+) -> list[str]:
     nlp = _load_spacy()
     doc = nlp(text)
     tokens: list[str] = []
+    if progress is not None:
+        progress(len(doc), 0)
 
     for idx, tok in enumerate(doc):
         token_text = tok.text.lower()
         if not WORD_RE.fullmatch(token_text):
+            if progress is not None:
+                progress(None, 1)
             continue
 
         if token_text == "z":
@@ -44,9 +52,13 @@ def tokenize(text: str) -> list[str]:
                 tokens.append("z (gen.)")
             else:
                 tokens.append("z")
+            if progress is not None:
+                progress(None, 1)
             continue
 
         tokens.append(token_text)
+        if progress is not None:
+            progress(None, 1)
 
     return tokens
 
@@ -66,7 +78,10 @@ def lemmatize_token(token: str) -> str:
     return lemma
 
 
-def lemma_groups(tokens: list[str]) -> dict[str, dict[str, int]]:
+def lemma_groups(
+    tokens: list[str],
+    progress: Callable[[int | None, int], None] | None = None,
+) -> dict[str, dict[str, int]]:
     groups: dict[str, dict[str, int]] = {}
     missing = [
         t
@@ -75,10 +90,16 @@ def lemma_groups(tokens: list[str]) -> dict[str, dict[str, int]]:
     ]
     if missing:
         nlp = _load_spacy()
+        if progress is not None:
+            progress(len(missing), 0)
         for doc in nlp.pipe(missing, batch_size=256):
             token = doc[0].text if doc else ""
             lemma = doc[0].lemma_ if doc else token
             _LEMMA_CACHE[token] = lemma
+            if progress is not None:
+                progress(None, 1)
+    elif progress is not None:
+        progress(1, 1)
 
     for token in tokens:
         lemma = _LEMMA_CACHE.get(token, token)
