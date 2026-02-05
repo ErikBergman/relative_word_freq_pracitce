@@ -98,3 +98,4 @@ Let me know if you'd like this saved as a file, or if you want to move forward w
 * Default: uses `wordfreq` scoring (local vs. global frequency).
 * `--plain`: show the raw top list without `wordfreq` scoring.
 * `--allow-ones`: include words that appear only once (default excludes them).
+* `--allow-inflections-in-list`: include inflected forms in the top list (default shows only lemmas).
