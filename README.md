@@ -62,7 +62,7 @@ polish_vocab_extractor/
 4. **Frequency Comparison**:
 
    * `wordfreq` estimates global word frequency
-   * Words are scored by their *local vs. global* frequency ratio
+   * Words are scored by their *local vs. global* frequency difference (Zipf scale)
 5. **Output**: You get a ranked `.csv` of words worth learning first.
 
 ---
@@ -93,3 +93,7 @@ This tool was built as a personal project to aid Polish language acquisition. Co
 ---
 
 Let me know if you'd like this saved as a file, or if you want to move forward with implementing the `tokenizer.py` module using `spaCy` + `Morfeusz2`.
+## 🧰 CLI Options
+
+* Default: uses `wordfreq` scoring (local vs. global frequency).
+* `--plain`: show the raw top list without `wordfreq` scoring.
