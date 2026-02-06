@@ -69,7 +69,7 @@ polish_vocab_extractor/
 * Some proper nouns or idioms may not be well-handled by UDPipe
 * Frequency comparison relies on generic corpora (context-insensitive)
 * Definitions and translations are not provided (yet)
-* No GUI or web interface – CLI-only for now
+* GUI is available but currently minimal
 
 ---
 
@@ -96,3 +96,23 @@ Let me know if you'd like this saved as a file, or if you want to move forward w
 * `--plain`: show the raw top list without `wordfreq` scoring.
 * `--allow-ones`: include words that appear only once (default excludes them).
 * `--allow-inflections-in-list`: include inflected forms in the top list (default shows only lemmas).
+
+## 🖥️ GUI (Toga)
+
+Install Toga:
+
+```bash
+pip install toga
+```
+
+Run:
+
+```bash
+python app_toga.py
+```
+
+The GUI lets you:
+* Set start/end markers for cleaning
+* Drag and drop files or browse
+* Toggle options and limit
+* Run extraction and save HTML tables to `output_html/`
