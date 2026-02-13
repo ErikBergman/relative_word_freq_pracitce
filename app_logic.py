@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from extractor.cleaner import extract_text
-from extractor.frequency import score_words, top_words
+from extractor.frequency import filter_counts_by_zipf, score_words, top_words
 from extractor.tokenizer import lemma_groups, tokenize
 
 
@@ -40,6 +40,7 @@ def build_rows(
 
     if settings.allow_inflections:
         if settings.use_wordfreq:
+            counts = filter_counts_by_zipf(counts, min_global_zipf=1.0)
             for word, count, score in score_words(counts, settings.limit):
                 rows.append(Row(word, count, score, ""))
         else:
@@ -52,6 +53,7 @@ def build_rows(
         lemma_counts = Counter({k: v for k, v in lemma_counts.items() if v > 1})
 
     if settings.use_wordfreq:
+        lemma_counts = filter_counts_by_zipf(lemma_counts, min_global_zipf=1.0)
         items = score_words(lemma_counts, settings.limit)
         for lemma, total, score in items:
             forms = groups.get(lemma, {})

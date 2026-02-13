@@ -6,7 +6,7 @@ from pathlib import Path
 from collections import Counter
 
 from extractor import extract_text, lemma_groups, load_config, tokenize, top_words
-from extractor.frequency import score_words
+from extractor.frequency import filter_counts_by_zipf, score_words
 
 try:
     from rich.console import Console
@@ -91,6 +91,8 @@ def main() -> None:
     for lemma, forms in groups.items():
         if len(forms) > 1:
             counts[f"{lemma}*"] = sum(forms.values())
+    if not args.plain:
+        counts = filter_counts_by_zipf(counts, min_global_zipf=1.0)
 
     if not use_rich:
         if args.plain:
@@ -152,6 +154,7 @@ def main() -> None:
                     lemma_counts = Counter(
                         {k: v for k, v in lemma_counts.items() if v > 1}
                     )
+                lemma_counts = filter_counts_by_zipf(lemma_counts, min_global_zipf=1.0)
                 for lemma, total, score in score_words(lemma_counts, args.limit):
                     forms = groups.get(lemma, {})
                     details = ", ".join(
@@ -225,6 +228,7 @@ def main() -> None:
                 lemma_counts = Counter(
                     {k: v for k, v in lemma_counts.items() if v > 1}
                 )
+            lemma_counts = filter_counts_by_zipf(lemma_counts, min_global_zipf=1.0)
             for lemma, total, score in score_words(lemma_counts, args.limit):
                 forms = groups.get(lemma, {})
                 details = ", ".join(

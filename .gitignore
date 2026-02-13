@@ -3,4 +3,5 @@
 udpipe/
 .cache/
 output_html/
+"output_html/
 output_html/app_toga.log
