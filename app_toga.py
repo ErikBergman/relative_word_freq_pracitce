@@ -4,6 +4,7 @@ import logging
 import traceback
 import threading
 from collections import Counter
+import math
 from pathlib import Path
 from typing import Iterable
 
@@ -85,9 +86,21 @@ class PolishVocabApp(toga.App):
         )
 
         self.zipf_slider = toga.Slider(value=1.0, min=0.0, max=7.0, style=Pack(flex=1))
+        self.zipf_slider.on_change = self._on_zipf_slider_change
+        self.zipf_value_label = toga.Label("Minimum global Zipf: 1.0")
+        self.zipf_scale_row = toga.Box(style=Pack(direction=ROW, margin_top=4))
+        self.zipf_example_row = toga.Box(style=Pack(direction=ROW, margin_top=2))
+        self.zipf_example_labels: list[toga.Label] = []
+        for i in range(8):
+            self.zipf_scale_row.add(toga.Label(str(i), style=Pack(flex=1)))
+            label = toga.Label("—", style=Pack(flex=1))
+            self.zipf_example_labels.append(label)
+            self.zipf_example_row.add(label)
         self.zipf_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
-        self.zipf_box.add(toga.Label("Zipf filter (UI only for now)"))
+        self.zipf_box.add(self.zipf_value_label)
         self.zipf_box.add(self.zipf_slider)
+        self.zipf_box.add(self.zipf_scale_row)
+        self.zipf_box.add(self.zipf_example_row)
 
         self.progress = toga.ProgressBar(max=1, value=0, style=Pack(flex=1))
         self.log_box = toga.MultilineTextInput(
@@ -158,6 +171,44 @@ class PolishVocabApp(toga.App):
             if self.cancel_btn in self.button_row.children:
                 self.button_row.remove(self.cancel_btn)
             self.staged_results.clear()
+            self._clear_zipf_examples()
+
+    def _on_zipf_slider_change(self, _widget) -> None:
+        quantized = round(float(self.zipf_slider.value) * 10.0) / 10.0
+        if abs(float(self.zipf_slider.value) - quantized) > 1e-9:
+            self.zipf_slider.value = quantized
+            return
+        self.zipf_value_label.text = f"Minimum global Zipf: {quantized:.1f}"
+
+    def _clear_zipf_examples(self) -> None:
+        for label in self.zipf_example_labels:
+            label.text = "—"
+
+    def _update_zipf_examples(self) -> None:
+        self._clear_zipf_examples()
+        if not self.staged_results:
+            return
+        try:
+            from wordfreq import zipf_frequency
+        except Exception:
+            self._append_log("wordfreq not available, Zipf examples skipped")
+            return
+
+        merged_counts: Counter = Counter()
+        for counts, _groups in self.staged_results.values():
+            merged_counts.update(counts)
+
+        buckets: dict[int, list[str]] = {i: [] for i in range(8)}
+        for word, _count in merged_counts.most_common():
+            zipf = zipf_frequency(word, "pl")
+            level = int(math.floor(zipf))
+            if level < 0 or level > 7:
+                continue
+            if len(buckets[level]) < 3 and word not in buckets[level]:
+                buckets[level].append(word)
+
+        for i in range(8):
+            self.zipf_example_labels[i].text = ", ".join(buckets[i]) or "—"
 
     async def browse(self, _widget) -> None:
         try:
@@ -213,13 +264,18 @@ class PolishVocabApp(toga.App):
             allow_ones=self.allow_ones.value,
             allow_inflections=self.allow_inflections.value,
             use_wordfreq=self.use_wordfreq.value,
+            min_zipf=(
+                round(float(self.zipf_slider.value) * 10.0) / 10.0
+                if self.enable_zipf_filter.value
+                else 1.0
+            ),
         )
         out_dir = Path("output_html")
         out_dir.mkdir(exist_ok=True)
         self._append_log(
             f"Start run: files={len(self.files)} limit={limit_value} "
             f"use_wordfreq={settings.use_wordfreq} allow_ones={settings.allow_ones} "
-            f"allow_inflections={settings.allow_inflections}"
+            f"allow_inflections={settings.allow_inflections} min_zipf={settings.min_zipf:.1f}"
         )
 
         self.progress.value = 0
@@ -349,6 +405,7 @@ class PolishVocabApp(toga.App):
                     self._finish_run()
                     return
                 self._append_log("Tokenize stage finished")
+                self._update_zipf_examples()
                 self.start_btn.text = "Rank"
                 if self.cancel_btn not in self.button_row.children:
                     self.button_row.add(self.cancel_btn)
@@ -416,6 +473,7 @@ class PolishVocabApp(toga.App):
         self.start_btn.text = "Tokenize"
         if self.cancel_btn in self.button_row.children:
             self.button_row.remove(self.cancel_btn)
+        self._clear_zipf_examples()
         self._append_log("Staged tokenization cleared")
 
     def _finish_run(self, reset_rank_state: bool = False) -> None:
@@ -429,6 +487,7 @@ class PolishVocabApp(toga.App):
                 self.start_btn.text = "Tokenize"
                 if self.cancel_btn in self.button_row.children:
                     self.button_row.remove(self.cancel_btn)
+                self._clear_zipf_examples()
         else:
             self.start_btn.text = "Tokenize and rank"
 

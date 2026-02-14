@@ -21,6 +21,7 @@ class Settings:
     allow_ones: bool = False
     allow_inflections: bool = False
     use_wordfreq: bool = True
+    min_zipf: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -40,8 +41,10 @@ def build_rows(
 
     if settings.allow_inflections:
         if settings.use_wordfreq:
-            counts = filter_counts_by_zipf(counts, min_global_zipf=1.0)
-            for word, count, score in score_words(counts, settings.limit):
+            counts = filter_counts_by_zipf(counts, min_global_zipf=settings.min_zipf)
+            for word, count, score in score_words(
+                counts, settings.limit, min_global_zipf=settings.min_zipf
+            ):
                 rows.append(Row(word, count, score, ""))
         else:
             for word, count in top_words(counts, settings.limit):
@@ -53,8 +56,12 @@ def build_rows(
         lemma_counts = Counter({k: v for k, v in lemma_counts.items() if v > 1})
 
     if settings.use_wordfreq:
-        lemma_counts = filter_counts_by_zipf(lemma_counts, min_global_zipf=1.0)
-        items = score_words(lemma_counts, settings.limit)
+        lemma_counts = filter_counts_by_zipf(
+            lemma_counts, min_global_zipf=settings.min_zipf
+        )
+        items = score_words(
+            lemma_counts, settings.limit, min_global_zipf=settings.min_zipf
+        )
         for lemma, total, score in items:
             forms = groups.get(lemma, {})
             details = ", ".join(
