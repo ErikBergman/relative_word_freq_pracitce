@@ -6,6 +6,7 @@ import traceback
 import threading
 from collections import Counter
 import math
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -56,6 +57,7 @@ def _coerce_path(value) -> Path | None:
 class PolishVocabApp(toga.App):
     ZIPF_MIN = 0.0
     ZIPF_MAX = 7.0
+    STATE_PATH = Path(".cache/app_toga_state.json")
 
     def startup(self) -> None:
         self.files: list[Path] = []
@@ -99,6 +101,7 @@ class PolishVocabApp(toga.App):
         )
         self.ignore_words_input = toga.MultilineTextInput(
             placeholder="One pattern per line, wildcards allowed (e.g. *ing, rp*)",
+            on_change=self._on_ignore_words_change,
             style=Pack(height=120),
         )
         self.ignore_words_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
@@ -196,6 +199,7 @@ class PolishVocabApp(toga.App):
             self.main_window.on_drop = self.on_drop
         except Exception:
             pass
+        self._load_persistent_state()
         self._append_log("GUI initialized")
 
     def _set_macos_app_identity(self) -> None:
@@ -242,6 +246,34 @@ class PolishVocabApp(toga.App):
             if self.ignore_words_box in self.main_box.children:
                 self.main_box.remove(self.ignore_words_box)
                 self._append_log("Ignore words box hidden")
+        self._save_persistent_state()
+
+    def _on_ignore_words_change(self, _widget) -> None:
+        self._save_persistent_state()
+
+    def _save_persistent_state(self) -> None:
+        state = {
+            "ignore_words_enabled": bool(self.enable_ignore_words.value),
+            "ignore_words_text": self.ignore_words_input.value or "",
+        }
+        self.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.STATE_PATH.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _load_persistent_state(self) -> None:
+        if not self.STATE_PATH.exists():
+            return
+        try:
+            state = json.loads(self.STATE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        self.ignore_words_input.value = str(state.get("ignore_words_text", ""))
+        enabled = bool(state.get("ignore_words_enabled", False))
+        self.enable_ignore_words.value = enabled
+        if enabled and self.ignore_words_box not in self.main_box.children:
+            self.main_box.add(self.ignore_words_box)
 
     @staticmethod
     def _quantize_slider(value: float) -> float:
