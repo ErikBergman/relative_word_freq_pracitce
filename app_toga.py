@@ -13,7 +13,13 @@ import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN, ROW
 
-from app_logic import Settings, build_rows, process_file, render_html
+from app_logic import (
+    Settings,
+    apply_ignore_patterns,
+    build_rows,
+    process_file,
+    render_html,
+)
 from extractor.cleaner import extract_text
 from extractor.tokenizer import lemma_groups, tokenize
 
@@ -88,6 +94,18 @@ class PolishVocabApp(toga.App):
         self.enable_zipf_filter = toga.Switch(
             "Enable Zipf filter slider", on_change=self._toggle_zipf_slider
         )
+        self.enable_ignore_words = toga.Switch(
+            "Ignore words", on_change=self._toggle_ignore_words
+        )
+        self.ignore_words_input = toga.MultilineTextInput(
+            placeholder="One pattern per line, wildcards allowed (e.g. *ing, rp*)",
+            style=Pack(height=120),
+        )
+        self.ignore_words_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
+        self.ignore_words_box.add(
+            toga.Label("Ignore patterns (one per row, supports * and ?)")
+        )
+        self.ignore_words_box.add(self.ignore_words_input)
 
         self.zipf_min_slider = toga.Slider(
             value=1.0, min=self.ZIPF_MIN, max=self.ZIPF_MAX, style=Pack(flex=1)
@@ -140,6 +158,7 @@ class PolishVocabApp(toga.App):
         options_box.add(self.allow_inflections)
         options_box.add(self.use_wordfreq)
         options_box.add(self.enable_zipf_filter)
+        options_box.add(self.enable_ignore_words)
         options_box.add(toga.Label("Limit", style=Pack(margin_top=8)))
         options_box.add(self.limit_input)
 
@@ -161,7 +180,13 @@ class PolishVocabApp(toga.App):
 
         self.main_window = toga.MainWindow(title=self.formal_name)
         self.main_box = main_box
-        self.main_window.content = main_box
+        self.root_scroll = toga.ScrollContainer(
+            content=main_box,
+            horizontal=False,
+            vertical=True,
+            style=Pack(flex=1),
+        )
+        self.main_window.content = self.root_scroll
         self.main_window.show()
         self._set_macos_app_identity()
 
@@ -207,6 +232,16 @@ class PolishVocabApp(toga.App):
                 self.button_row.remove(self.cancel_btn)
             self.staged_results.clear()
             self._clear_zipf_examples()
+
+    def _toggle_ignore_words(self, _widget) -> None:
+        if self.enable_ignore_words.value:
+            if self.ignore_words_box not in self.main_box.children:
+                self.main_box.add(self.ignore_words_box)
+                self._append_log("Ignore words box shown")
+        else:
+            if self.ignore_words_box in self.main_box.children:
+                self.main_box.remove(self.ignore_words_box)
+                self._append_log("Ignore words box hidden")
 
     @staticmethod
     def _quantize_slider(value: float) -> float:
@@ -335,6 +370,15 @@ class PolishVocabApp(toga.App):
             max_zipf=(
                 float(self.zipf_max_slider.value) if self.enable_zipf_filter.value else 7.0
             ),
+            ignore_patterns=(
+                tuple(
+                    line.strip().lower()
+                    for line in (self.ignore_words_input.value or "").splitlines()
+                    if line.strip()
+                )
+                if self.enable_ignore_words.value
+                else ()
+            ),
         )
         out_dir = Path("output_html")
         out_dir.mkdir(exist_ok=True)
@@ -342,7 +386,8 @@ class PolishVocabApp(toga.App):
             f"Start run: files={len(self.files)} limit={limit_value} "
             f"use_wordfreq={settings.use_wordfreq} allow_ones={settings.allow_ones} "
             f"allow_inflections={settings.allow_inflections} "
-            f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f}"
+            f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f} "
+            f"ignore_patterns={len(settings.ignore_patterns)}"
         )
 
         self.progress.value = 0
@@ -447,9 +492,10 @@ class PolishVocabApp(toga.App):
                     text = extract_text(path, settings.start, settings.end)
                     report("clean", None, 1)
                     tokens = tokenize(text, progress=lambda t, a: report("tokenize", t, a))
+                    tokens = apply_ignore_patterns(tokens, settings.ignore_patterns)
                     groups = lemma_groups(
                         tokens,
-                        text=text,
+                        text=None,
                         progress=lambda t, a: report("lemmatize", t, a),
                     )
                     counts = Counter(tokens)

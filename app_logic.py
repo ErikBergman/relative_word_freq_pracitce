@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Callable
 
@@ -23,6 +24,7 @@ class Settings:
     use_wordfreq: bool = True
     min_zipf: float = 1.0
     max_zipf: float = 7.0
+    ignore_patterns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,8 @@ def process_file(
     report("clean", None, 1)
 
     tokens = tokenize(text, progress=lambda t, a: report("tokenize", t, a))
-    groups = lemma_groups(tokens, text=text, progress=lambda t, a: report("lemmatize", t, a))
+    tokens = apply_ignore_patterns(tokens, settings.ignore_patterns)
+    groups = lemma_groups(tokens, text=None, progress=lambda t, a: report("lemmatize", t, a))
 
     counts = Counter(tokens)
     if not settings.allow_ones:
@@ -121,6 +124,20 @@ def process_file(
 
     report("count", 1, 1)
     return build_rows(counts, groups, settings)
+
+
+def apply_ignore_patterns(
+    tokens: list[str],
+    patterns: tuple[str, ...] | list[str],
+) -> list[str]:
+    normalized_patterns = tuple(p.strip().lower() for p in patterns if p.strip())
+    if not normalized_patterns:
+        return tokens
+    return [
+        token
+        for token in tokens
+        if not any(fnmatch(token, pattern) for pattern in normalized_patterns)
+    ]
 
 
 def render_html(title: str, rows: list[Row]) -> str:
