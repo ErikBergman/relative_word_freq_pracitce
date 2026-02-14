@@ -257,18 +257,19 @@ class PolishVocabApp(toga.App):
             self._append_log("wordfreq not available, Zipf examples skipped")
             return
 
-        merged_counts: Counter = Counter()
-        for counts, _groups in self.staged_results.values():
-            merged_counts.update(counts)
+        merged_lemma_counts: Counter = Counter()
+        for _counts, groups in self.staged_results.values():
+            for lemma, forms in groups.items():
+                merged_lemma_counts[lemma] += sum(forms.values())
 
         buckets: dict[int, list[str]] = {i: [] for i in range(8)}
-        for word, _count in merged_counts.most_common():
-            zipf = zipf_frequency(word, "pl")
+        for lemma, _count in merged_lemma_counts.most_common():
+            zipf = zipf_frequency(lemma, "pl")
             level = int(math.floor(zipf))
             if level < 0 or level > 7:
                 continue
-            if len(buckets[level]) < 3 and word not in buckets[level]:
-                buckets[level].append(word)
+            if len(buckets[level]) < 3 and lemma not in buckets[level]:
+                buckets[level].append(lemma)
 
         for i in range(8):
             clipped = [self._clip_bucket_word(word) for word in buckets[i][:3]]
