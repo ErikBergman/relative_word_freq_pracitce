@@ -47,6 +47,9 @@ def _coerce_path(value) -> Path | None:
 
 
 class PolishVocabApp(toga.App):
+    ZIPF_MIN = 0.0
+    ZIPF_MAX = 7.0
+
     def startup(self) -> None:
         self.files: list[Path] = []
         self.staged_results: dict[str, tuple[Counter, dict[str, dict[str, int]]]] = {}
@@ -85,9 +88,17 @@ class PolishVocabApp(toga.App):
             "Enable Zipf filter slider", on_change=self._toggle_zipf_slider
         )
 
-        self.zipf_slider = toga.Slider(value=1.0, min=0.0, max=7.0, style=Pack(flex=1))
-        self.zipf_slider.on_change = self._on_zipf_slider_change
-        self.zipf_value_label = toga.Label("Minimum global Zipf: 1.0")
+        self.zipf_min_slider = toga.Slider(
+            value=1.0, min=self.ZIPF_MIN, max=self.ZIPF_MAX, style=Pack(flex=1)
+        )
+        self.zipf_min_slider.on_change = self._on_zipf_min_change
+        self.zipf_max_slider = toga.Slider(
+            value=7.0, min=self.ZIPF_MIN, max=self.ZIPF_MAX, style=Pack(flex=1)
+        )
+        self.zipf_max_slider.on_change = self._on_zipf_max_change
+        self.zipf_value_label = toga.Label("Zipf exclusion range")
+        self.zipf_min_label = toga.Label("Exclude below (min): 1.0")
+        self.zipf_max_label = toga.Label("Exclude above (max): 7.0")
         self.zipf_scale_row = toga.Box(style=Pack(direction=ROW, margin_top=4))
         self.zipf_example_row = toga.Box(style=Pack(direction=ROW, margin_top=2))
         self.zipf_example_labels: list[toga.Label] = []
@@ -98,7 +109,10 @@ class PolishVocabApp(toga.App):
             self.zipf_example_row.add(label)
         self.zipf_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
         self.zipf_box.add(self.zipf_value_label)
-        self.zipf_box.add(self.zipf_slider)
+        self.zipf_box.add(self.zipf_min_label)
+        self.zipf_box.add(self.zipf_min_slider)
+        self.zipf_box.add(self.zipf_max_label)
+        self.zipf_box.add(self.zipf_max_slider)
         self.zipf_box.add(self.zipf_scale_row)
         self.zipf_box.add(self.zipf_example_row)
 
@@ -173,12 +187,35 @@ class PolishVocabApp(toga.App):
             self.staged_results.clear()
             self._clear_zipf_examples()
 
-    def _on_zipf_slider_change(self, _widget) -> None:
-        quantized = round(float(self.zipf_slider.value) * 10.0) / 10.0
-        if abs(float(self.zipf_slider.value) - quantized) > 1e-9:
-            self.zipf_slider.value = quantized
+    @staticmethod
+    def _quantize_slider(value: float) -> float:
+        return round(float(value) * 10.0) / 10.0
+
+    def _sync_zipf_labels(self) -> None:
+        self.zipf_min_label.text = (
+            f"Exclude below (min): {float(self.zipf_min_slider.value):.1f}"
+        )
+        self.zipf_max_label.text = (
+            f"Exclude above (max): {float(self.zipf_max_slider.value):.1f}"
+        )
+
+    def _on_zipf_min_change(self, _widget) -> None:
+        snapped = self._quantize_slider(float(self.zipf_min_slider.value))
+        if abs(float(self.zipf_min_slider.value) - snapped) > 1e-9:
+            self.zipf_min_slider.value = snapped
             return
-        self.zipf_value_label.text = f"Minimum global Zipf: {quantized:.1f}"
+        if snapped > float(self.zipf_max_slider.value):
+            self.zipf_max_slider.value = snapped
+        self._sync_zipf_labels()
+
+    def _on_zipf_max_change(self, _widget) -> None:
+        snapped = self._quantize_slider(float(self.zipf_max_slider.value))
+        if abs(float(self.zipf_max_slider.value) - snapped) > 1e-9:
+            self.zipf_max_slider.value = snapped
+            return
+        if snapped < float(self.zipf_min_slider.value):
+            self.zipf_min_slider.value = snapped
+        self._sync_zipf_labels()
 
     def _clear_zipf_examples(self) -> None:
         for label in self.zipf_example_labels:
@@ -271,9 +308,10 @@ class PolishVocabApp(toga.App):
             allow_inflections=self.allow_inflections.value,
             use_wordfreq=self.use_wordfreq.value,
             min_zipf=(
-                round(float(self.zipf_slider.value) * 10.0) / 10.0
-                if self.enable_zipf_filter.value
-                else 1.0
+                float(self.zipf_min_slider.value) if self.enable_zipf_filter.value else 1.0
+            ),
+            max_zipf=(
+                float(self.zipf_max_slider.value) if self.enable_zipf_filter.value else 7.0
             ),
         )
         out_dir = Path("output_html")
@@ -281,7 +319,8 @@ class PolishVocabApp(toga.App):
         self._append_log(
             f"Start run: files={len(self.files)} limit={limit_value} "
             f"use_wordfreq={settings.use_wordfreq} allow_ones={settings.allow_ones} "
-            f"allow_inflections={settings.allow_inflections} min_zipf={settings.min_zipf:.1f}"
+            f"allow_inflections={settings.allow_inflections} "
+            f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f}"
         )
 
         self.progress.value = 0
