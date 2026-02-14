@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import traceback
 import threading
 from collections import Counter
@@ -162,6 +163,7 @@ class PolishVocabApp(toga.App):
         self.main_box = main_box
         self.main_window.content = main_box
         self.main_window.show()
+        self._set_macos_app_identity()
 
         # Best-effort drag-and-drop support.
         # Best-effort drag-and-drop support (platform dependent).
@@ -170,6 +172,25 @@ class PolishVocabApp(toga.App):
         except Exception:
             pass
         self._append_log("GUI initialized")
+
+    def _set_macos_app_identity(self) -> None:
+        if sys.platform != "darwin":
+            return
+        try:
+            from rubicon.objc import ObjCClass
+
+            process_info = ObjCClass("NSProcessInfo").processInfo
+            process_info.setProcessName_(self.formal_name)
+
+            ns_app = ObjCClass("NSApplication").sharedApplication
+            ns_image = ObjCClass("NSImage").alloc().initWithContentsOfFile_(
+                str(Path("data/book_icon2.png").resolve())
+            )
+            if ns_image is not None:
+                ns_app.setApplicationIconImage_(ns_image)
+        except Exception:
+            # Non-fatal: this is a best-effort tweak for script mode on macOS.
+            pass
 
     def _toggle_zipf_slider(self, _widget) -> None:
         if self.enable_zipf_filter.value:
@@ -540,7 +561,12 @@ class PolishVocabApp(toga.App):
 
 
 def main() -> None:
-    PolishVocabApp("Polish Vocabulary Extractor", "org.example.polishvocab").main_loop()
+    PolishVocabApp(
+        "Polish Vocabulary Extractor",
+        "org.example.polishvocab",
+        app_name="PolishVocabularyExtractor",
+        icon=Path("data/book_icon2.png"),
+    ).main_loop()
 
 
 if __name__ == "__main__":
