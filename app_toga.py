@@ -74,6 +74,14 @@ class PolishVocabApp(toga.App):
         self.allow_ones = toga.Switch("Include words with frequency 1")
         self.allow_inflections = toga.Switch("Include inflections in list")
         self.use_wordfreq = toga.Switch("Use wordfreq scoring", value=True)
+        self.enable_zipf_filter = toga.Switch(
+            "Enable Zipf filter slider", on_change=self._toggle_zipf_slider
+        )
+
+        self.zipf_slider = toga.Slider(value=1.0, min=0.0, max=7.0, style=Pack(flex=1))
+        self.zipf_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
+        self.zipf_box.add(toga.Label("Zipf filter (UI only for now)"))
+        self.zipf_box.add(self.zipf_slider)
 
         self.progress = toga.ProgressBar(max=1, value=0, style=Pack(flex=1))
         self.log_box = toga.MultilineTextInput(
@@ -92,6 +100,7 @@ class PolishVocabApp(toga.App):
         options_box.add(self.allow_ones)
         options_box.add(self.allow_inflections)
         options_box.add(self.use_wordfreq)
+        options_box.add(self.enable_zipf_filter)
         options_box.add(toga.Label("Limit", style=Pack(margin_top=8)))
         options_box.add(self.limit_input)
 
@@ -110,6 +119,7 @@ class PolishVocabApp(toga.App):
         main_box.add(start_btn)
 
         self.main_window = toga.MainWindow(title=self.formal_name)
+        self.main_box = main_box
         self.main_window.content = main_box
         self.main_window.show()
 
@@ -120,6 +130,16 @@ class PolishVocabApp(toga.App):
         except Exception:
             pass
         self._append_log("GUI initialized")
+
+    def _toggle_zipf_slider(self, _widget) -> None:
+        if self.enable_zipf_filter.value:
+            if self.zipf_box not in self.main_box.children:
+                self.main_box.add(self.zipf_box)
+                self._append_log("Zipf slider shown")
+        else:
+            if self.zipf_box in self.main_box.children:
+                self.main_box.remove(self.zipf_box)
+                self._append_log("Zipf slider hidden")
 
     async def browse(self, _widget) -> None:
         try:
