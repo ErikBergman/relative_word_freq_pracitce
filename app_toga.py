@@ -92,8 +92,8 @@ class PolishVocabApp(toga.App):
         self.zipf_example_row = toga.Box(style=Pack(direction=ROW, margin_top=2))
         self.zipf_example_labels: list[toga.Label] = []
         for i in range(8):
-            self.zipf_scale_row.add(toga.Label(str(i), style=Pack(flex=1)))
-            label = toga.Label("—", style=Pack(flex=1))
+            self.zipf_scale_row.add(toga.Label(str(i), style=Pack(flex=1, font_size=10)))
+            label = toga.Label("—", style=Pack(flex=1, font_size=9))
             self.zipf_example_labels.append(label)
             self.zipf_example_row.add(label)
         self.zipf_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
@@ -184,6 +184,11 @@ class PolishVocabApp(toga.App):
         for label in self.zipf_example_labels:
             label.text = "—"
 
+    @staticmethod
+    def _clip_bucket_word(word: str, max_chars: int = 11) -> str:
+        # Keep bucket columns readable by hiding endings for long words.
+        return word if len(word) <= max_chars else word[:max_chars]
+
     def _update_zipf_examples(self) -> None:
         self._clear_zipf_examples()
         if not self.staged_results:
@@ -208,7 +213,8 @@ class PolishVocabApp(toga.App):
                 buckets[level].append(word)
 
         for i in range(8):
-            self.zipf_example_labels[i].text = ", ".join(buckets[i]) or "—"
+            clipped = [self._clip_bucket_word(word) for word in buckets[i][:3]]
+            self.zipf_example_labels[i].text = "\n\n".join(clipped) if clipped else "—"
 
     async def browse(self, _widget) -> None:
         try:
@@ -327,10 +333,10 @@ class PolishVocabApp(toga.App):
                 tb = traceback.format_exc()
                 self.logger.error("Worker failed: %s\n%s", exc, tb)
                 self.main_window.app.loop.call_soon_threadsafe(
-                    lambda: self.main_window.error_dialog("Processing failed", str(exc))
+                    lambda e=exc: self.main_window.error_dialog("Processing failed", str(e))
                 )
                 self.main_window.app.loop.call_soon_threadsafe(
-                    lambda: self._append_log(f"ERROR: {exc}")
+                    lambda e=exc: self._append_log(f"ERROR: {e}")
                 )
                 return
 
@@ -393,7 +399,9 @@ class PolishVocabApp(toga.App):
                 tb = traceback.format_exc()
                 self.logger.error("Tokenize stage failed: %s\n%s", exc, tb)
                 self.main_window.app.loop.call_soon_threadsafe(
-                    lambda: self.main_window.error_dialog("Tokenization failed", str(exc))
+                    lambda e=exc: self.main_window.error_dialog(
+                        "Tokenization failed", str(e)
+                    )
                 )
                 self.main_window.app.loop.call_soon_threadsafe(self._finish_run)
                 return
@@ -441,7 +449,7 @@ class PolishVocabApp(toga.App):
                 tb = traceback.format_exc()
                 self.logger.error("Rank stage failed: %s\n%s", exc, tb)
                 self.main_window.app.loop.call_soon_threadsafe(
-                    lambda: self.main_window.error_dialog("Rank failed", str(exc))
+                    lambda e=exc: self.main_window.error_dialog("Rank failed", str(e))
                 )
                 self.main_window.app.loop.call_soon_threadsafe(self._finish_run)
                 return
