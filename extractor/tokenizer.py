@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 from ufal.udpipe import Model, Pipeline
 
@@ -25,15 +25,6 @@ def _load_udpipe(model_path: Path | None = None) -> Pipeline:
     _UDPIPE_MODEL = model
     _UDPIPE_PIPELINE = Pipeline(model, "tokenize", Pipeline.DEFAULT, Pipeline.DEFAULT, "conllu")
     return _UDPIPE_PIPELINE
-
-
-def _feat_case(feats: str) -> str | None:
-    if not feats or feats == "_":
-        return None
-    for part in feats.split("|"):
-        if part.startswith("Case="):
-            return part.split("=", 1)[1]
-    return None
 
 
 def _iter_udpipe_tokens(
@@ -71,22 +62,7 @@ def tokenize(
 ) -> list[str]:
     stream = _iter_udpipe_tokens(text, progress=progress)
     tokens: list[str] = []
-    for idx, (form, _lemma, feats) in enumerate(stream):
-        if form == "z":
-            case = None
-            for _nxt_form, _nxt_lemma, nxt_feats in stream[idx + 1 :]:
-                case = _feat_case(nxt_feats)
-                if case:
-                    break
-            if case == "Ins":
-                tokens.append("z (instr.)")
-            elif case == "Gen":
-                tokens.append("z (gen.)")
-            else:
-                tokens.append("z")
-            if progress is not None:
-                progress(None, 1)
-            continue
+    for form, _lemma, _feats in stream:
         tokens.append(form)
         if progress is not None:
             progress(None, 1)
@@ -96,10 +72,6 @@ def tokenize(
 def lemmatize_token(token: str) -> str:
     if token in _LEMMA_CACHE:
         return _LEMMA_CACHE[token]
-
-    if token.startswith("z (") and token.endswith(")"):
-        _LEMMA_CACHE[token] = token
-        return token
 
     pipeline = _load_udpipe()
     conllu = pipeline.process(token)
@@ -123,19 +95,7 @@ def lemma_groups(
 ) -> dict[str, dict[str, int]]:
     groups: dict[str, dict[str, int]] = {}
     stream = _iter_udpipe_tokens(text or " ".join(tokens), progress=progress)
-    for idx, (form, lemma, feats) in enumerate(stream):
-        if form == "z":
-            case = None
-            for _nxt_form, _nxt_lemma, nxt_feats in stream[idx + 1 :]:
-                case = _feat_case(nxt_feats)
-                if case:
-                    break
-            if case == "Ins":
-                form = lemma = "z (instr.)"
-            elif case == "Gen":
-                form = lemma = "z (gen.)"
-            else:
-                form = lemma = "z"
+    for form, lemma, _feats in stream:
         forms = groups.setdefault(lemma, {})
         forms[form] = forms.get(form, 0) + 1
         if progress is not None:
@@ -144,9 +104,6 @@ def lemma_groups(
 
 
 def _normalize_lemma(token_text: str, lemma: str) -> str:
-    if token_text.startswith("z (") and token_text.endswith(")"):
-        return token_text
-
     try:
         from wordfreq import zipf_frequency
     except Exception:
