@@ -18,6 +18,7 @@ def score_words(
     lang: str = "pl",
     min_global_zipf: float = 1.0,
     max_global_zipf: float | None = None,
+    baseline_total: int | None = None,
 ) -> list[tuple[str, int, float]]:
     try:
         from wordfreq import zipf_frequency
@@ -26,7 +27,8 @@ def score_words(
             "wordfreq is required for score_words(). Install with: pip install wordfreq"
         ) from exc
 
-    total = sum(counts.values()) or 1
+    total = baseline_total if baseline_total is not None else sum(counts.values())
+    total = total or 1
     scored: list[tuple[str, int, float]] = []
     for word, count in counts.items():
         key = word[:-1] if word.endswith("*") else word

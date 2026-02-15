@@ -43,6 +43,7 @@ def build_rows(
     rows: list[Row] = []
 
     if settings.allow_inflections:
+        baseline_total = sum(counts.values())
         if settings.use_wordfreq:
             counts = filter_counts_by_zipf(
                 counts,
@@ -54,6 +55,7 @@ def build_rows(
                 settings.limit,
                 min_global_zipf=settings.min_zipf,
                 max_global_zipf=settings.max_zipf,
+                baseline_total=baseline_total,
             ):
                 rows.append(Row(word, count, score, ""))
         else:
@@ -64,6 +66,7 @@ def build_rows(
     lemma_counts = Counter({lemma: sum(forms.values()) for lemma, forms in groups.items()})
     if not settings.allow_ones:
         lemma_counts = Counter({k: v for k, v in lemma_counts.items() if v > 1})
+    baseline_total = sum(lemma_counts.values())
 
     if settings.use_wordfreq:
         lemma_counts = filter_counts_by_zipf(
@@ -76,6 +79,7 @@ def build_rows(
             settings.limit,
             min_global_zipf=settings.min_zipf,
             max_global_zipf=settings.max_zipf,
+            baseline_total=baseline_total,
         )
         for lemma, total, score in items:
             forms = groups.get(lemma, {})
