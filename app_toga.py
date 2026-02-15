@@ -22,6 +22,7 @@ from app_logic import (
     build_rows,
     render_html,
 )
+from extractor.frequency import blend_scores_from_terms, precompute_score_terms
 from extractor.cleaner import extract_text
 from extractor.tokenizer import lemma_groups, tokenize
 
@@ -78,6 +79,7 @@ class PolishVocabApp(toga.App):
         self.logger.addHandler(file_handler)
         self._debug_seq = 0
         self._preview_refresh_active = False
+        self._preview_terms_cache: dict[str, object] = {}
 
         self.file_list = toga.MultilineTextInput(
             readonly=True,
@@ -92,6 +94,9 @@ class PolishVocabApp(toga.App):
         self.end_input = toga.TextInput(value="<hr />", style=Pack(flex=1))
 
         self.limit_input = toga.TextInput(value="50", style=Pack(width=120))
+        self.balance_slider = toga.Slider(value=0.5, min=0.0, max=1.0, style=Pack(flex=1))
+        self.balance_slider.on_change = self._on_balance_change
+        self.balance_label = toga.Label("a = 0.50")
 
         self.allow_ones = toga.Switch("Include words with frequency 1")
         self.allow_inflections = toga.Switch("Include inflections in list")
@@ -162,6 +167,9 @@ class PolishVocabApp(toga.App):
         options_box.add(self.allow_inflections)
         options_box.add(self.use_wordfreq)
         options_box.add(self.enable_ignore_words)
+        options_box.add(toga.Label("Balance (absolute vs relative)", style=Pack(margin_top=8)))
+        options_box.add(self.balance_label)
+        options_box.add(self.balance_slider)
         options_box.add(toga.Label("Limit", style=Pack(margin_top=8)))
         options_box.add(self.limit_input)
 
@@ -329,6 +337,14 @@ class PolishVocabApp(toga.App):
         self._sync_zipf_labels()
         self._refresh_preview()
 
+    def _on_balance_change(self, _widget) -> None:
+        snapped = round(float(self.balance_slider.value) * 100.0) / 100.0
+        if abs(float(self.balance_slider.value) - snapped) > 1e-9:
+            self.balance_slider.value = snapped
+            return
+        self.balance_label.text = f"a = {snapped:.2f}"
+        self._refresh_preview()
+
     def _clear_zipf_examples(self) -> None:
         for label in self.zipf_example_labels:
             label.text = "—"
@@ -390,6 +406,7 @@ class PolishVocabApp(toga.App):
             use_wordfreq=self.use_wordfreq.value,
             min_zipf=float(self.zipf_min_slider.value),
             max_zipf=float(self.zipf_max_slider.value),
+            balance_a=float(self.balance_slider.value),
             ignore_patterns=(
                 tuple(
                     line.strip().lower()
@@ -399,6 +416,30 @@ class PolishVocabApp(toga.App):
                 if self.enable_ignore_words.value
                 else ()
             ),
+        )
+
+    def _rebuild_preview_cache(self) -> None:
+        merged_counts: Counter = Counter()
+        merged_groups: dict[str, dict[str, int]] = {}
+        for counts, groups in self.staged_results.values():
+            merged_counts.update(counts)
+            for lemma, forms in groups.items():
+                dst = merged_groups.setdefault(lemma, {})
+                for form, cnt in forms.items():
+                    dst[form] = dst.get(form, 0) + cnt
+
+        lemma_counts = Counter({lemma: sum(forms.values()) for lemma, forms in merged_groups.items()})
+        self._preview_terms_cache = {
+            "merged_counts": merged_counts,
+            "merged_groups": merged_groups,
+            "lemma_counts": lemma_counts,
+            "token_terms": precompute_score_terms(merged_counts),
+            "lemma_terms": precompute_score_terms(lemma_counts),
+        }
+        self._debug(
+            "preview cache rebuilt",
+            token_types=len(merged_counts),
+            lemmas=len(lemma_counts),
         )
 
     def _refresh_preview(self) -> None:
@@ -426,35 +467,40 @@ class PolishVocabApp(toga.App):
                 use_wordfreq=settings.use_wordfreq,
                 min_zipf=f"{settings.min_zipf:.1f}",
                 max_zipf=f"{settings.max_zipf:.1f}",
+                balance_a=f"{settings.balance_a:.2f}",
                 ignore_patterns=len(settings.ignore_patterns),
             )
-            merged_counts: Counter = Counter()
-            merged_groups: dict[str, dict[str, int]] = {}
+            if not self._preview_terms_cache:
+                self._rebuild_preview_cache()
 
-            for name, (counts, groups) in self.staged_results.items():
-                self._debug(
-                    "preview merging file",
-                    file=name,
-                    token_types=len(counts),
-                    lemmas=len(groups),
+            merged_counts = self._preview_terms_cache["merged_counts"]
+            merged_groups = self._preview_terms_cache["merged_groups"]
+            lemma_counts = self._preview_terms_cache["lemma_counts"]
+
+            if settings.use_wordfreq:
+                terms_key = "token_terms" if settings.allow_inflections else "lemma_terms"
+                terms = self._preview_terms_cache[terms_key]
+                if not settings.allow_ones:
+                    source_counts = merged_counts if settings.allow_inflections else lemma_counts
+                    terms = {
+                        word: term for word, term in terms.items() if source_counts.get(word, 0) > 1
+                    }
+                scored = blend_scores_from_terms(
+                    terms,
+                    limit=settings.limit,
+                    balance_a=settings.balance_a,
+                    min_global_zipf=settings.min_zipf,
+                    max_global_zipf=settings.max_zipf,
                 )
-                merged_counts.update(counts)
-                for lemma, forms in groups.items():
-                    dst = merged_groups.setdefault(lemma, {})
-                    for form, cnt in forms.items():
-                        dst[form] = dst.get(form, 0) + cnt
-
-            self._debug(
-                "preview merged totals",
-                token_types=len(merged_counts),
-                lemmas=len(merged_groups),
-            )
-
-            rows = build_rows(merged_counts, merged_groups, settings)
-            preview_rows = rows[: min(25, len(rows))]
+                preview_rows = scored[: min(25, len(scored))]
+                rows_len = len(scored)
+            else:
+                rows = build_rows(merged_counts, merged_groups, settings)
+                preview_rows = rows[: min(25, len(rows))]
+                rows_len = len(rows)
             self._debug(
                 "preview rows ready",
-                all_rows=len(rows),
+                all_rows=rows_len,
                 preview_rows=len(preview_rows),
             )
             if not preview_rows:
@@ -467,10 +513,14 @@ class PolishVocabApp(toga.App):
                 return
 
             lines = [f"{'Word':24} {'Count':>7} {'Score':>8}"]
-            for row in preview_rows:
-                score = "" if row.score is None else f"{row.score:.3f}"
-                word = row.word[:24]
-                lines.append(f"{word:24} {row.count:7d} {score:>8}")
+            if settings.use_wordfreq:
+                for word, count, score in preview_rows:
+                    lines.append(f"{word[:24]:24} {count:7d} {score:>8.3f}")
+            else:
+                for row in preview_rows:
+                    score = "" if row.score is None else f"{row.score:.3f}"
+                    word = row.word[:24]
+                    lines.append(f"{word:24} {row.count:7d} {score:>8}")
             self.preview_text.value = "\n".join(lines)
             self._debug(
                 "preview refresh done",
@@ -542,6 +592,7 @@ class PolishVocabApp(toga.App):
             f"use_wordfreq={settings.use_wordfreq} allow_ones={settings.allow_ones} "
             f"allow_inflections={settings.allow_inflections} "
             f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f} "
+            f"balance_a={settings.balance_a:.2f} "
             f"ignore_patterns={len(settings.ignore_patterns)}"
         )
 
@@ -563,6 +614,7 @@ class PolishVocabApp(toga.App):
 
     def _run_tokenize_stage(self, settings: Settings) -> None:
         self.staged_results.clear()
+        self._preview_terms_cache.clear()
         self._append_log("Tokenize stage started")
         self._debug("tokenize stage init", files=len(self.files))
 
@@ -639,6 +691,7 @@ class PolishVocabApp(toga.App):
                     self._finish_run()
                     return
                 self._append_log("Tokenize stage finished")
+                self._rebuild_preview_cache()
                 self._update_zipf_examples()
                 self._refresh_preview()
                 self._set_zipf_controls_ready(True)
@@ -711,6 +764,7 @@ class PolishVocabApp(toga.App):
             self._append_log("Cancel requested")
             return
         self.staged_results.clear()
+        self._preview_terms_cache.clear()
         self.start_btn.text = "Tokenize"
         if self.cancel_btn in self.button_row.children:
             self.button_row.remove(self.cancel_btn)
@@ -730,6 +784,7 @@ class PolishVocabApp(toga.App):
         self.start_btn.enabled = True
         if reset_rank_state:
             self.staged_results.clear()
+            self._preview_terms_cache.clear()
             self.start_btn.text = "Tokenize"
             if self.cancel_btn in self.button_row.children:
                 self.button_row.remove(self.cancel_btn)

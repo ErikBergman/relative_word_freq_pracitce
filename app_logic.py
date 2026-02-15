@@ -24,6 +24,7 @@ class Settings:
     use_wordfreq: bool = True
     min_zipf: float = 1.0
     max_zipf: float = 7.0
+    balance_a: float = 0.5
     ignore_patterns: tuple[str, ...] = ()
 
 
@@ -56,6 +57,7 @@ def build_rows(
                 min_global_zipf=settings.min_zipf,
                 max_global_zipf=settings.max_zipf,
                 baseline_total=baseline_total,
+                balance_a=settings.balance_a,
             ):
                 rows.append(Row(word, count, score, ""))
         else:
@@ -80,6 +82,7 @@ def build_rows(
             min_global_zipf=settings.min_zipf,
             max_global_zipf=settings.max_zipf,
             baseline_total=baseline_total,
+            balance_a=settings.balance_a,
         )
         for lemma, total, score in items:
             forms = groups.get(lemma, {})
