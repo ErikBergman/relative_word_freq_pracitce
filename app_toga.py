@@ -20,7 +20,6 @@ from app_logic import (
     Settings,
     apply_ignore_patterns,
     build_rows,
-    process_file,
     render_html,
 )
 from extractor.cleaner import extract_text
@@ -97,9 +96,6 @@ class PolishVocabApp(toga.App):
         self.allow_ones = toga.Switch("Include words with frequency 1")
         self.allow_inflections = toga.Switch("Include inflections in list")
         self.use_wordfreq = toga.Switch("Use wordfreq scoring", value=True)
-        self.enable_zipf_filter = toga.Switch(
-            "Enable Zipf filter slider", on_change=self._toggle_zipf_slider
-        )
         self.enable_ignore_words = toga.Switch(
             "Ignore words", on_change=self._toggle_ignore_words
         )
@@ -148,7 +144,7 @@ class PolishVocabApp(toga.App):
             readonly=True, style=Pack(flex=1, height=130, margin_top=8)
         )
         self.start_btn = toga.Button(
-            "Tokenize and rank", on_press=self.start, style=Pack(margin_top=10)
+            "Tokenize", on_press=self.start, style=Pack(margin_top=10)
         )
         self.cancel_btn = toga.Button(
             "Cancel", on_press=self.cancel, style=Pack(margin_top=10, margin_left=8)
@@ -165,7 +161,6 @@ class PolishVocabApp(toga.App):
         options_box.add(self.allow_ones)
         options_box.add(self.allow_inflections)
         options_box.add(self.use_wordfreq)
-        options_box.add(self.enable_zipf_filter)
         options_box.add(self.enable_ignore_words)
         options_box.add(toga.Label("Limit", style=Pack(margin_top=8)))
         options_box.add(self.limit_input)
@@ -179,6 +174,7 @@ class PolishVocabApp(toga.App):
         main_box.add(self.file_list)
         main_box.add(browse_btn)
         main_box.add(top_row)
+        main_box.add(self.zipf_box)
         main_box.add(self.progress)
         self.button_row = toga.Box(style=Pack(direction=ROW))
         self.button_row.add(self.start_btn)
@@ -221,11 +217,7 @@ class PolishVocabApp(toga.App):
             pass
         self._load_persistent_state()
         self._append_log("GUI initialized")
-        self._debug(
-            "startup complete",
-            zipf_enabled=self.enable_zipf_filter.value,
-            ignore_enabled=self.enable_ignore_words.value,
-        )
+        self._debug("startup complete", ignore_enabled=self.enable_ignore_words.value)
 
     def _debug(self, message: str, **fields) -> None:
         self._debug_seq += 1
@@ -254,24 +246,6 @@ class PolishVocabApp(toga.App):
         except Exception:
             # Non-fatal: this is a best-effort tweak for script mode on macOS.
             pass
-
-    def _toggle_zipf_slider(self, _widget) -> None:
-        self._debug("toggle zipf", enabled=self.enable_zipf_filter.value)
-        if self.enable_zipf_filter.value:
-            if self.zipf_box not in self.main_box.children:
-                self.main_box.add(self.zipf_box)
-                self._append_log("Zipf slider shown")
-            self.start_btn.text = "Tokenize"
-            self._set_zipf_controls_ready(False)
-        else:
-            if self.zipf_box in self.main_box.children:
-                self.main_box.remove(self.zipf_box)
-                self._append_log("Zipf slider hidden")
-            self.start_btn.text = "Tokenize and rank"
-            if self.cancel_btn in self.button_row.children:
-                self.button_row.remove(self.cancel_btn)
-            self.staged_results.clear()
-            self._clear_zipf_examples()
 
     def _set_zipf_controls_ready(self, ready: bool) -> None:
         self.zipf_min_slider.enabled = ready
@@ -414,12 +388,8 @@ class PolishVocabApp(toga.App):
             allow_ones=self.allow_ones.value,
             allow_inflections=self.allow_inflections.value,
             use_wordfreq=self.use_wordfreq.value,
-            min_zipf=(
-                float(self.zipf_min_slider.value) if self.enable_zipf_filter.value else 1.0
-            ),
-            max_zipf=(
-                float(self.zipf_max_slider.value) if self.enable_zipf_filter.value else 7.0
-            ),
+            min_zipf=float(self.zipf_min_slider.value),
+            max_zipf=float(self.zipf_max_slider.value),
             ignore_patterns=(
                 tuple(
                     line.strip().lower()
@@ -581,84 +551,15 @@ class PolishVocabApp(toga.App):
         self.cancel_requested = False
         self.is_running = True
         self.start_btn.enabled = False
-        self.enable_zipf_filter.enabled = False
         self._debug(
             "run dispatch",
-            mode=(
-                "rank"
-                if self.enable_zipf_filter.value and self.start_btn.text == "Rank"
-                else ("tokenize" if self.enable_zipf_filter.value else "full")
-            ),
+            mode=("rank" if self.start_btn.text == "Rank" else "tokenize"),
         )
 
-        if self.enable_zipf_filter.value and self.start_btn.text == "Rank":
+        if self.start_btn.text == "Rank":
             self._run_rank_stage(settings, out_dir)
-        elif self.enable_zipf_filter.value:
-            self._run_tokenize_stage(settings)
         else:
-            self._run_full_stage(settings, out_dir)
-
-    def _run_full_stage(self, settings: Settings, out_dir: Path) -> None:
-        def run() -> None:
-            self._debug("full stage thread start", files=len(self.files))
-            results: dict[str, list] = {}
-
-            def cb(step: str, total: int | None, advance: int) -> None:
-                def update() -> None:
-                    if total is not None:
-                        self.step_totals[step] = total
-                        self.progress.max = sum(self.step_totals.values())
-                    if advance:
-                        self.progress.value = min(
-                            self.progress.value + advance, self.progress.max
-                        )
-
-                self.main_window.app.loop.call_soon_threadsafe(update)
-
-            try:
-                for path in self.files:
-                    if self.cancel_requested:
-                        break
-                    self.main_window.app.loop.call_soon_threadsafe(
-                        lambda p=path: self._append_log(f"Processing file: {p.name}")
-                    )
-                    rows = process_file(path, settings, progress=cb)
-                    self._debug("full stage file done", file=path.name, rows=len(rows))
-                    results[path.name] = rows
-                    self.main_window.app.loop.call_soon_threadsafe(
-                        lambda n=path.name, c=len(rows): self._append_log(
-                            f"Completed file: {n}, rows={c}"
-                        )
-                    )
-            except Exception as exc:
-                tb = traceback.format_exc()
-                self.logger.error("Worker failed: %s\n%s", exc, tb)
-                self.main_window.app.loop.call_soon_threadsafe(
-                    lambda e=exc: self.main_window.error_dialog("Processing failed", str(e))
-                )
-                self.main_window.app.loop.call_soon_threadsafe(
-                    lambda e=exc: self._append_log(f"ERROR: {e}")
-                )
-                return
-
-            def done() -> None:
-                self._debug("full stage done callback", canceled=self.cancel_requested)
-                if self.cancel_requested:
-                    self._append_log("Run canceled")
-                    self._finish_run()
-                    return
-                for name, rows in results.items():
-                    html = render_html(name, rows)
-                    out_path = out_dir / f"{Path(name).stem}.html"
-                    out_path.write_text(html, encoding="utf-8")
-                    self._append_log(f"Wrote: {out_path}")
-                self.main_window.info_dialog("Done", f"Saved HTML to {out_dir}")
-                self._append_log("Run finished")
-                self._finish_run()
-
-            self.main_window.app.loop.call_soon_threadsafe(done)
-
-        threading.Thread(target=run, daemon=True).start()
+            self._run_tokenize_stage(settings)
 
     def _run_tokenize_stage(self, settings: Settings) -> None:
         self.staged_results.clear()
@@ -827,22 +728,18 @@ class PolishVocabApp(toga.App):
         self.is_running = False
         self.cancel_requested = False
         self.start_btn.enabled = True
-        self.enable_zipf_filter.enabled = True
-        if self.enable_zipf_filter.value:
-            if reset_rank_state:
-                self.staged_results.clear()
-                self.start_btn.text = "Tokenize"
-                if self.cancel_btn in self.button_row.children:
-                    self.button_row.remove(self.cancel_btn)
-                self._clear_zipf_examples()
-                self._set_zipf_controls_ready(False)
-                self._refresh_preview()
-            elif self.staged_results:
-                self._set_zipf_controls_ready(True)
-            else:
-                self._set_zipf_controls_ready(False)
+        if reset_rank_state:
+            self.staged_results.clear()
+            self.start_btn.text = "Tokenize"
+            if self.cancel_btn in self.button_row.children:
+                self.button_row.remove(self.cancel_btn)
+            self._clear_zipf_examples()
+            self._set_zipf_controls_ready(False)
+            self._refresh_preview()
+        elif self.staged_results:
+            self._set_zipf_controls_ready(True)
         else:
-            self.start_btn.text = "Tokenize and rank"
+            self._set_zipf_controls_ready(False)
 
 
 def main() -> None:
