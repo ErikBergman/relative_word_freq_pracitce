@@ -98,9 +98,12 @@ class PolishVocabApp(toga.App):
         self.balance_slider.on_change = self._on_balance_change
         self.balance_label = toga.Label("a = 0.50")
 
-        self.allow_ones = toga.Switch("Include words with frequency 1")
-        self.allow_inflections = toga.Switch("Include inflections in list")
-        self.use_wordfreq = toga.Switch("Use wordfreq scoring", value=True)
+        self.allow_ones = toga.Switch(
+            "Include words with frequency 1", on_change=self._on_preview_option_change
+        )
+        self.allow_inflections = toga.Switch(
+            "Include inflections in list", on_change=self._on_preview_option_change
+        )
         self.enable_ignore_words = toga.Switch(
             "Ignore words", on_change=self._toggle_ignore_words
         )
@@ -165,7 +168,6 @@ class PolishVocabApp(toga.App):
         options_box.add(toga.Label("Options"))
         options_box.add(self.allow_ones)
         options_box.add(self.allow_inflections)
-        options_box.add(self.use_wordfreq)
         options_box.add(self.enable_ignore_words)
         options_box.add(toga.Label("Balance (absolute vs relative)", style=Pack(margin_top=8)))
         options_box.add(self.balance_label)
@@ -274,6 +276,15 @@ class PolishVocabApp(toga.App):
                 self.main_box.remove(self.ignore_words_box)
                 self._append_log("Ignore words box hidden")
         self._save_persistent_state()
+        self._refresh_preview()
+
+    def _on_preview_option_change(self, _widget) -> None:
+        self._debug(
+            "preview option changed",
+            allow_ones=self.allow_ones.value,
+            allow_inflections=self.allow_inflections.value,
+        )
+        self._refresh_preview()
 
     def _on_ignore_words_change(self, _widget) -> None:
         self._debug("ignore words changed", length=len(self.ignore_words_input.value or ""))
@@ -403,7 +414,7 @@ class PolishVocabApp(toga.App):
             limit=limit_value,
             allow_ones=self.allow_ones.value,
             allow_inflections=self.allow_inflections.value,
-            use_wordfreq=self.use_wordfreq.value,
+            use_wordfreq=True,
             min_zipf=float(self.zipf_min_slider.value),
             max_zipf=float(self.zipf_max_slider.value),
             balance_a=float(self.balance_slider.value),
