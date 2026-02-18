@@ -66,3 +66,55 @@ def test_no_nan_or_inf_for_zero_tf_or_zero_ref() -> None:
     assert scored
     for _word, _count, score in scored:
         assert math.isfinite(score)
+
+
+def test_balance_a_clamped_above_one() -> None:
+    counts = Counter({"kot": 4})
+    score = _score_for(counts, {"kot": 0.0001}, a=9.0, word="kot")
+    assert math.isclose(score, math.log(5.0), rel_tol=1e-12, abs_tol=1e-12)
+
+
+def test_balance_a_clamped_below_zero() -> None:
+    counts = Counter({"kot": 4})
+    total = 4.0
+    p_target = 1.0
+    p_ref = 0.01
+    score = _score_for(counts, {"kot": p_ref}, a=-3.0, word="kot")
+    expected = math.log((p_target + EPS) / (p_ref + EPS))
+    assert math.isclose(score, expected, rel_tol=1e-12, abs_tol=1e-12)
+
+
+def test_asterisk_word_uses_reference_without_suffix() -> None:
+    counts = Counter({"kot*": 2})
+    terms = precompute_score_terms(
+        counts,
+        ref_probs={"kot": 0.01, "kot*": 0.5},
+        eps=EPS,
+    )
+    expected = math.log(1.0 + EPS) - math.log(0.01 + EPS)
+    assert math.isclose(
+        terms["kot*"].log_ratio,
+        expected,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+
+
+def test_max_zipf_filter_excludes_overly_common_word() -> None:
+    counts = Counter({"common": 2, "rare": 2})
+    terms = precompute_score_terms(
+        counts,
+        ref_probs={
+            "common": 0.1,     # zipf ~ 8.0
+            "rare": 0.000001,  # zipf ~ 3.0
+        },
+        eps=EPS,
+    )
+    scored = blend_scores_from_terms(
+        terms,
+        limit=10,
+        balance_a=0.5,
+        min_global_zipf=0.0,
+        max_global_zipf=5.0,
+    )
+    assert [word for word, _count, _score in scored] == ["rare"]
