@@ -199,7 +199,11 @@ class PolishVocabApp(toga.App):
         self.preview_text = toga.MultilineTextInput(
             readonly=True,
             value="Preview updates after tokenization.",
-            style=Pack(flex=1),
+            style=Pack(
+                flex=1,
+                font_family=["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"],
+                font_size=11,
+            ),
         )
         self.preview_box.add(self.preview_text)
 
@@ -219,6 +223,7 @@ class PolishVocabApp(toga.App):
         self.main_window.content = self.split
         self.main_window.size = (1400, 900)
         self.main_window.show()
+        self._set_preview_monospace_font()
         self._set_macos_app_identity()
 
         # Best-effort drag-and-drop support.
@@ -258,6 +263,39 @@ class PolishVocabApp(toga.App):
         except Exception:
             # Non-fatal: this is a best-effort tweak for script mode on macOS.
             pass
+
+    def _set_preview_monospace_font(self) -> None:
+        # Use widget-level font settings first.
+        self.preview_text.font_family = [
+            "SF Mono",
+            "Menlo",
+            "Monaco",
+            "Courier New",
+            "monospace",
+        ]
+        self.preview_text.font_size = 11
+
+        # macOS backend can ignore style fonts for read-only multiline widgets.
+        # Force a native monospace font on the underlying NSTextView when available.
+        if sys.platform != "darwin":
+            return
+        try:
+            from rubicon.objc import ObjCClass
+
+            ns_font = ObjCClass("NSFont")
+            font = ns_font.fontWithName_size_("Menlo", 11.0)
+            if font is None:
+                font = ns_font.monospacedSystemFontOfSize_weight_(11.0, 0.0)
+
+            native = self.preview_text._impl.native
+            if hasattr(native, "setFont_"):
+                native.setFont_(font)
+            if hasattr(native, "documentView"):
+                doc_view = native.documentView()
+                if doc_view is not None and hasattr(doc_view, "setFont_"):
+                    doc_view.setFont_(font)
+        except Exception as exc:
+            self._debug("preview monospace fallback failed", error=repr(exc))
 
     def _set_zipf_controls_ready(self, ready: bool) -> None:
         self.zipf_min_slider.enabled = ready
@@ -486,6 +524,34 @@ class PolishVocabApp(toga.App):
             return ""
         return random.choice(hits)
 
+    @staticmethod
+    def _format_preview_text_table(rows: list[tuple[str, int, str]]) -> str:
+        if not rows:
+            return ""
+
+        word_col = [word for word, _, _ in rows]
+        count_col = [str(count) for _, count, _ in rows]
+        score_col = [score for _, _, score in rows]
+
+        word_width = max(len("Word"), *(len(value) for value in word_col))
+        count_width = max(len("Count"), *(len(value) for value in count_col))
+        score_width = max(len("Score"), *(len(value) for value in score_col))
+
+        def line(word: str, count: str, score: str) -> str:
+            return (
+                f"{word.ljust(word_width)}  "
+                f"{count.rjust(count_width)}  "
+                f"{score.rjust(score_width)}"
+            )
+
+        lines = [
+            line("Word", "Count", "Score"),
+            line("-" * word_width, "-" * count_width, "-" * score_width),
+        ]
+        for word, count, score in rows:
+            lines.append(line(word, str(count), score))
+        return "\n".join(lines)
+
     def _refresh_preview(self) -> None:
         if self._preview_refresh_active:
             self._debug("preview refresh skipped", reason="already_active")
@@ -556,20 +622,19 @@ class PolishVocabApp(toga.App):
                 )
                 return
 
-            lines = [f"{'Word':24} {'Count':>7} {'Score':>8}"]
+            table_rows: list[tuple[str, int, str]] = []
             if settings.use_wordfreq:
                 for word, count, score in preview_rows:
-                    lines.append(f"{word[:24]:24} {count:7d} {score:>8.3f}")
+                    table_rows.append((word, count, f"{score:.3f}"))
             else:
                 for row in preview_rows:
                     score = "" if row.score is None else f"{row.score:.3f}"
-                    word = row.word[:24]
-                    lines.append(f"{word:24} {row.count:7d} {score:>8}")
-            self.preview_text.value = "\n".join(lines)
+                    table_rows.append((row.word, row.count, score))
+            self.preview_text.value = self._format_preview_text_table(table_rows)
             self._debug(
                 "preview refresh done",
                 seconds=f"{time.perf_counter() - t0:.3f}",
-                lines=len(lines),
+                lines=len(table_rows) + 2,
             )
         except Exception as exc:
             tb = traceback.format_exc()
