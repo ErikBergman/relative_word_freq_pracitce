@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import random
+import re
 import sys
 import traceback
 import threading
@@ -63,7 +65,9 @@ class PolishVocabApp(toga.App):
 
     def startup(self) -> None:
         self.files: list[Path] = []
-        self.staged_results: dict[str, tuple[Counter, dict[str, dict[str, int]]]] = {}
+        self.staged_results: dict[
+            str, tuple[Counter, dict[str, dict[str, int]], list[str]]
+        ] = {}
         self.is_running = False
         self.cancel_requested = False
         self.step_totals = {"clean": 1, "tokenize": 0, "lemmatize": 0, "count": 1}
@@ -194,12 +198,17 @@ class PolishVocabApp(toga.App):
 
         self.preview_box = toga.Box(style=Pack(direction=COLUMN, margin=12))
         self.preview_box.add(toga.Label("Top List Preview"))
-        self.preview_text = toga.MultilineTextInput(
-            readonly=True,
-            value="Preview updates after tokenization.",
-            style=Pack(flex=1),
+        self.preview_status = toga.Label(
+            "Preview updates after tokenization.", style=Pack(font_size=10)
         )
-        self.preview_box.add(self.preview_text)
+        self.preview_table = toga.Table(
+            headings=["Word", "Count", "Factor", "Quote"],
+            accessors=["word", "count", "factor", "quote"],
+            data=[],
+            style=Pack(flex=1, font_size=10),
+        )
+        self.preview_box.add(self.preview_status)
+        self.preview_box.add(self.preview_table)
 
         self.main_window = toga.MainWindow(title=self.formal_name)
         self.main_box = main_box
@@ -380,7 +389,7 @@ class PolishVocabApp(toga.App):
             return
 
         merged_lemma_counts: Counter = Counter()
-        for _counts, groups in self.staged_results.values():
+        for _counts, groups, _sentences in self.staged_results.values():
             for lemma, forms in groups.items():
                 merged_lemma_counts[lemma] += sum(forms.values())
 
@@ -432,12 +441,14 @@ class PolishVocabApp(toga.App):
     def _rebuild_preview_cache(self) -> None:
         merged_counts: Counter = Counter()
         merged_groups: dict[str, dict[str, int]] = {}
-        for counts, groups in self.staged_results.values():
+        all_sentences: list[str] = []
+        for counts, groups, sentences in self.staged_results.values():
             merged_counts.update(counts)
             for lemma, forms in groups.items():
                 dst = merged_groups.setdefault(lemma, {})
                 for form, cnt in forms.items():
                     dst[form] = dst.get(form, 0) + cnt
+            all_sentences.extend(sentences)
 
         lemma_counts = Counter({lemma: sum(forms.values()) for lemma, forms in merged_groups.items()})
         self._preview_terms_cache = {
@@ -446,12 +457,44 @@ class PolishVocabApp(toga.App):
             "lemma_counts": lemma_counts,
             "token_terms": precompute_score_terms(merged_counts),
             "lemma_terms": precompute_score_terms(lemma_counts),
+            "sentences": all_sentences,
         }
         self._debug(
             "preview cache rebuilt",
             token_types=len(merged_counts),
             lemmas=len(lemma_counts),
         )
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        chunks = re.split(r"(?<=[.!?])\s+", text)
+        return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+    @staticmethod
+    def _random_quote_for_word(word: str, sentences: list[str]) -> str:
+        if not sentences:
+            return ""
+        pattern = re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
+        candidates = [s for s in sentences if pattern.search(s)]
+        if not candidates:
+            return ""
+        return random.choice(candidates)
+
+    @staticmethod
+    def _random_quote_for_candidates(candidates: list[str], sentences: list[str]) -> str:
+        if not sentences or not candidates:
+            return ""
+        patterns = [
+            re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
+            for word in candidates
+            if word
+        ]
+        if not patterns:
+            return ""
+        hits = [s for s in sentences if any(p.search(s) for p in patterns)]
+        if not hits:
+            return ""
+        return random.choice(hits)
 
     def _refresh_preview(self) -> None:
         if self._preview_refresh_active:
@@ -461,7 +504,8 @@ class PolishVocabApp(toga.App):
         t0 = time.perf_counter()
         self._debug("preview refresh start", staged_files=len(self.staged_results))
         if not self.staged_results:
-            self.preview_text.value = "Preview updates after tokenization."
+            self.preview_status.text = "Preview updates after tokenization."
+            self.preview_table.data = []
             self._debug(
                 "preview refresh done",
                 seconds=f"{time.perf_counter() - t0:.3f}",
@@ -487,6 +531,7 @@ class PolishVocabApp(toga.App):
             merged_counts = self._preview_terms_cache["merged_counts"]
             merged_groups = self._preview_terms_cache["merged_groups"]
             lemma_counts = self._preview_terms_cache["lemma_counts"]
+            sentences = self._preview_terms_cache.get("sentences", [])
 
             if settings.use_wordfreq:
                 terms_key = "token_terms" if settings.allow_inflections else "lemma_terms"
@@ -515,7 +560,8 @@ class PolishVocabApp(toga.App):
                 preview_rows=len(preview_rows),
             )
             if not preview_rows:
-                self.preview_text.value = "No words match current filters."
+                self.preview_status.text = "No words match current filters."
+                self.preview_table.data = []
                 self._debug(
                     "preview refresh done",
                     seconds=f"{time.perf_counter() - t0:.3f}",
@@ -523,26 +569,56 @@ class PolishVocabApp(toga.App):
                 )
                 return
 
-            lines = [f"{'Word':24} {'Count':>7} {'Score':>8}"]
+            table_rows: list[dict[str, str]] = []
             if settings.use_wordfreq:
                 for word, count, score in preview_rows:
-                    lines.append(f"{word[:24]:24} {count:7d} {score:>8.3f}")
+                    term = terms.get(word)
+                    ratio = math.exp(term.log_ratio) if term is not None else 0.0
+                    quote = (
+                        self._random_quote_for_word(word, sentences)
+                        if settings.allow_inflections
+                        else self._random_quote_for_candidates(
+                            list(merged_groups.get(word, {}).keys()), sentences
+                        )
+                    )
+                    table_rows.append(
+                        {
+                            "word": word,
+                            "count": str(count),
+                            "factor": f"{ratio:.3f}",
+                            "quote": quote,
+                        }
+                    )
             else:
                 for row in preview_rows:
-                    score = "" if row.score is None else f"{row.score:.3f}"
-                    word = row.word[:24]
-                    lines.append(f"{word:24} {row.count:7d} {score:>8}")
-            self.preview_text.value = "\n".join(lines)
+                    quote = (
+                        self._random_quote_for_word(row.word, sentences)
+                        if settings.allow_inflections
+                        else self._random_quote_for_candidates(
+                            list(merged_groups.get(row.word, {}).keys()), sentences
+                        )
+                    )
+                    table_rows.append(
+                        {
+                            "word": row.word,
+                            "count": str(row.count),
+                            "factor": "",
+                            "quote": quote,
+                        }
+                    )
+            self.preview_status.text = f"Showing {len(table_rows)} of {rows_len} rows"
+            self.preview_table.data = table_rows
             self._debug(
                 "preview refresh done",
                 seconds=f"{time.perf_counter() - t0:.3f}",
-                lines=len(lines),
+                lines=len(table_rows),
             )
         except Exception as exc:
             tb = traceback.format_exc()
             self.logger.error("Preview refresh failed: %s\n%s", exc, tb)
             self._append_log(f"Preview error: {exc}")
-            self.preview_text.value = f"Preview error: {exc}"
+            self.preview_status.text = f"Preview error: {exc}"
+            self.preview_table.data = []
             self._debug("preview refresh error", error=repr(exc))
         finally:
             self._preview_refresh_active = False
@@ -672,7 +748,11 @@ class PolishVocabApp(toga.App):
                     counts = Counter(tokens)
                     if not settings.allow_ones:
                         counts = Counter({k: v for k, v in counts.items() if v > 1})
-                    self.staged_results[path.name] = (counts, groups)
+                    self.staged_results[path.name] = (
+                        counts,
+                        groups,
+                        self._split_sentences(text),
+                    )
                     self._debug(
                         "tokenize staged",
                         file=path.name,
@@ -731,7 +811,7 @@ class PolishVocabApp(toga.App):
             )
 
             try:
-                for name, (counts, groups) in self.staged_results.items():
+                for name, (counts, groups, _sentences) in self.staged_results.items():
                     if self.cancel_requested:
                         break
                     rows = build_rows(counts, groups, settings)
