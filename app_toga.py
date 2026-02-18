@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import random
+import re
 import sys
 import traceback
 import threading
@@ -452,6 +454,37 @@ class PolishVocabApp(toga.App):
             token_types=len(merged_counts),
             lemmas=len(lemma_counts),
         )
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        chunks = re.split(r"(?<=[.!?])\s+", text)
+        return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+    @staticmethod
+    def _random_quote_for_word(word: str, sentences: list[str]) -> str:
+        if not sentences:
+            return ""
+        pattern = re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
+        candidates = [sentence for sentence in sentences if pattern.search(sentence)]
+        if not candidates:
+            return ""
+        return random.choice(candidates)
+
+    @staticmethod
+    def _random_quote_for_candidates(candidates: list[str], sentences: list[str]) -> str:
+        if not sentences or not candidates:
+            return ""
+        patterns = [
+            re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
+            for word in candidates
+            if word
+        ]
+        if not patterns:
+            return ""
+        hits = [sentence for sentence in sentences if any(p.search(sentence) for p in patterns)]
+        if not hits:
+            return ""
+        return random.choice(hits)
 
     def _refresh_preview(self) -> None:
         if self._preview_refresh_active:
