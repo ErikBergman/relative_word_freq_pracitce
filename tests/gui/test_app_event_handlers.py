@@ -89,6 +89,7 @@ def test_cancel_idle_clears_state_and_resets_controls() -> None:
     logs: list[str] = []
     app.is_running = False
     app.staged_results = {"x": ({"a": 1}, {"a": {"a": 1}})}
+    app.staged_sentences = {"x": ["Ala ma kota."]}
     app._preview_terms_cache = {"x": 1}
     app.start_btn = SimpleNamespace(text="Rank")
     app.cancel_btn = object()
@@ -101,6 +102,7 @@ def test_cancel_idle_clears_state_and_resets_controls() -> None:
     app.cancel(None)
 
     assert app.staged_results == {}
+    assert app.staged_sentences == {}
     assert app._preview_terms_cache == {}
     assert app.start_btn.text == "Tokenize"
     assert app.cancel_btn not in app.button_row.children

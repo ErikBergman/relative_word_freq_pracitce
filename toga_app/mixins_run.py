@@ -8,6 +8,11 @@ from pathlib import Path
 import toga
 
 from app_logic import Settings, apply_ignore_patterns, build_rows, render_html
+from app_logic import (
+    append_unique_clozemaster_entries,
+    build_clozemaster_entries,
+    split_sentences,
+)
 from extractor.cleaner import extract_text
 from extractor.tokenizer import lemma_groups, tokenize
 
@@ -88,6 +93,7 @@ class RunMixin:
 
     def _run_tokenize_stage(self, settings: Settings) -> None:
         self.staged_results.clear()
+        self.staged_sentences.clear()
         self._preview_terms_cache.clear()
         self._append_log("Tokenize stage started")
         self._debug("tokenize stage init", files=len(self.files))
@@ -117,9 +123,13 @@ class RunMixin:
                     report("clean", 1, 0)
                     text = extract_text(path, settings.start, settings.end)
                     report("clean", None, 1)
+                    self.staged_sentences[path.name] = split_sentences(text)
                     tokens = tokenize(text, progress=lambda t, a: report("tokenize", t, a))
                     self._debug(
-                        "tokenize tokens ready", file=path.name, token_count=len(tokens)
+                        "tokenize tokens ready",
+                        file=path.name,
+                        token_count=len(tokens),
+                        sentence_count=len(self.staged_sentences[path.name]),
                     )
                     tokens = apply_ignore_patterns(tokens, settings.ignore_patterns)
                     self._debug(
@@ -163,6 +173,7 @@ class RunMixin:
                 if self.cancel_requested:
                     self._append_log("Tokenize stage canceled")
                     self.staged_results.clear()
+                    self.staged_sentences.clear()
                     self._finish_run()
                     return
                 self._append_log("Tokenize stage finished")
@@ -186,6 +197,7 @@ class RunMixin:
         def run() -> None:
             self._debug("rank stage thread start", staged_files=len(self.staged_results))
             results: dict[str, list] = {}
+            clozemaster_entries: list[tuple[str, str, str, str, str]] = []
             total_files = max(1, len(self.staged_results))
             self.main_window.app.loop.call_soon_threadsafe(
                 lambda: setattr(self.progress, "max", total_files)
@@ -201,6 +213,14 @@ class RunMixin:
                     rows = build_rows(counts, groups, settings)
                     self._debug("rank rows built", file=name, rows=len(rows))
                     results[name] = rows
+                    clozemaster_entries.extend(
+                        build_clozemaster_entries(
+                            rows,
+                            groups,
+                            self.staged_sentences.get(name, []),
+                            allow_inflections=settings.allow_inflections,
+                        )
+                    )
                     self.main_window.app.loop.call_soon_threadsafe(
                         lambda: setattr(self.progress, "value", self.progress.value + 1)
                     )
@@ -224,6 +244,13 @@ class RunMixin:
                     out_path = out_dir / f"{Path(name).stem}.html"
                     out_path.write_text(html, encoding="utf-8")
                     self._append_log(f"Wrote: {out_path}")
+                added, skipped = append_unique_clozemaster_entries(
+                    Path("clozemaster_input_realpolish.csv"), clozemaster_entries
+                )
+                self._append_log(
+                    "Clozemaster CSV updated: "
+                    f"added={added}, skipped_duplicates={skipped}"
+                )
                 self.main_window.info_dialog("Done", f"Saved HTML to {out_dir}")
                 self._append_log("Rank stage finished")
                 self._finish_run(reset_rank_state=True)
@@ -239,6 +266,7 @@ class RunMixin:
             self._append_log("Cancel requested")
             return
         self.staged_results.clear()
+        self.staged_sentences.clear()
         self._preview_terms_cache.clear()
         self.start_btn.text = "Tokenize"
         if self.cancel_btn in self.button_row.children:
@@ -259,6 +287,7 @@ class RunMixin:
         self.start_btn.enabled = True
         if reset_rank_state:
             self.staged_results.clear()
+            self.staged_sentences.clear()
             self._preview_terms_cache.clear()
             self.start_btn.text = "Tokenize"
             if self.cancel_btn in self.button_row.children:

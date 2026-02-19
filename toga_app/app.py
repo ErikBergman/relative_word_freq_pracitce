@@ -29,6 +29,7 @@ class PolishVocabApp(
     def startup(self) -> None:
         self.files: list[Path] = []
         self.staged_results: dict[str, tuple[Counter, dict[str, dict[str, int]]]] = {}
+        self.staged_sentences: dict[str, list[str]] = {}
         self.is_running = False
         self.cancel_requested = False
         self.step_totals = {"clean": 1, "tokenize": 0, "lemmatize": 0, "count": 1}

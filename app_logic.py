@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
+import csv
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
+import re
 from typing import Callable
 
 from extractor.cleaner import extract_text
@@ -177,3 +179,91 @@ def render_html(title: str, rows: list[Row]) -> str:
         )
     lines += ["</tbody></table></body></html>"]
     return "\n".join(lines)
+
+
+def split_sentences(text: str) -> list[str]:
+    chunks = re.split(r"(?<=[.!?])\s+", text)
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+
+def _first_word_match(sentence: str, candidates: list[str]) -> str:
+    for candidate in candidates:
+        pattern = re.compile(rf"\b{re.escape(candidate)}\b", re.IGNORECASE)
+        match = pattern.search(sentence)
+        if match:
+            return match.group(0)
+    return ""
+
+
+def build_clozemaster_entries(
+    rows: list[Row],
+    groups: dict[str, dict[str, int]],
+    sentences: list[str],
+    *,
+    allow_inflections: bool,
+) -> list[tuple[str, str, str, str, str]]:
+    entries: list[tuple[str, str, str, str, str]] = []
+    if not sentences:
+        return entries
+
+    for row in rows:
+        if allow_inflections:
+            candidates = [row.word]
+        else:
+            forms = groups.get(row.word, {})
+            sorted_forms = [
+                form
+                for form, _count in sorted(
+                    forms.items(), key=lambda item: item[1], reverse=True
+                )
+            ]
+            candidates = sorted_forms or [row.word]
+
+        selected_sentence = ""
+        selected_word = ""
+        for sentence in sentences:
+            if len(sentence) > 300:
+                continue
+            literal = _first_word_match(sentence, candidates)
+            if literal:
+                selected_sentence = sentence
+                selected_word = literal
+                break
+
+        if not selected_sentence:
+            continue
+
+        entries.append((selected_sentence, "", selected_word, "", ""))
+
+    return entries
+
+
+def append_unique_clozemaster_entries(
+    csv_path: Path,
+    entries: list[tuple[str, str, str, str, str]],
+) -> tuple[int, int]:
+    if not entries:
+        return (0, 0)
+
+    existing: set[tuple[str, str, str, str, str]] = set()
+    if csv_path.exists():
+        with csv_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle, delimiter=";")
+            for row in reader:
+                if len(row) >= 5:
+                    existing.add((row[0], row[1], row[2], row[3], row[4]))
+
+    added = 0
+    skipped = 0
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter=";")
+        for entry in entries:
+            if entry in existing:
+                skipped += 1
+                continue
+            writer.writerow(entry)
+            existing.add(entry)
+            added += 1
+
+    return (added, skipped)

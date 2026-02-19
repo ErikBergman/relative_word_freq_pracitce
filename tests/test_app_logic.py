@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app_logic import Row, Settings, apply_ignore_patterns, build_rows, render_html
+from app_logic import (
+    Row,
+    Settings,
+    append_unique_clozemaster_entries,
+    apply_ignore_patterns,
+    build_clozemaster_entries,
+    build_rows,
+    render_html,
+    split_sentences,
+)
 
 
 def test_apply_ignore_patterns_supports_wildcards() -> None:
@@ -67,3 +76,67 @@ def test_render_html_formats_score_and_empty_score_cell() -> None:
     assert "<td class='num'>1.235</td>" in html
     assert "<td class='num'></td>" in html
     assert "<td>kota 2, koty 1</td>" in html
+
+
+def test_split_sentences_handles_multiple_punctuation() -> None:
+    text = "To jest zdanie. To drugie!  A trzecie?  "
+    assert split_sentences(text) == ["To jest zdanie.", "To drugie!", "A trzecie?"]
+
+
+def test_build_clozemaster_entries_uses_literal_form_from_sentence() -> None:
+    rows = [Row(word="pieróg", count=2, score=1.0, forms="pierogi 2")]
+    groups = {"pieróg": {"pierogi": 2}}
+    sentences = [
+        "Lubię jeść pierogi z mięsem.",
+        "To inny przykład.",
+    ]
+    entries = build_clozemaster_entries(
+        rows,
+        groups,
+        sentences,
+        allow_inflections=False,
+    )
+    assert entries == [("Lubię jeść pierogi z mięsem.", "", "pierogi", "", "")]
+
+
+def test_build_clozemaster_entries_preserves_capitalization() -> None:
+    rows = [Row(word="pierogi", count=1, score=1.0, forms="")]
+    groups: dict[str, dict[str, int]] = {}
+    sentences = ["Pierogi są bardzo smaczne."]
+    entries = build_clozemaster_entries(
+        rows,
+        groups,
+        sentences,
+        allow_inflections=True,
+    )
+    assert entries == [("Pierogi są bardzo smaczne.", "", "Pierogi", "", "")]
+
+
+def test_append_unique_clozemaster_entries_deduplicates(tmp_path) -> None:
+    csv_path = tmp_path / "clozemaster_input_realpolish.csv"
+    entries = [
+        ("Pierogi są bardzo smaczne.", "", "Pierogi", "", ""),
+        ("Lubię jeść pierogi z mięsem.", "", "pierogi", "", ""),
+    ]
+    added, skipped = append_unique_clozemaster_entries(csv_path, entries)
+    assert (added, skipped) == (2, 0)
+
+    added, skipped = append_unique_clozemaster_entries(csv_path, entries)
+    assert (added, skipped) == (0, 2)
+
+    lines = csv_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+
+
+def test_build_clozemaster_entries_skips_sentences_over_300_chars() -> None:
+    rows = [Row(word="pierogi", count=1, score=1.0, forms="")]
+    groups: dict[str, dict[str, int]] = {}
+    long_sentence = ("pierogi " * 50).strip()  # > 300 chars
+    short_sentence = "Pierogi są bardzo smaczne."
+    entries = build_clozemaster_entries(
+        rows,
+        groups,
+        [long_sentence, short_sentence],
+        allow_inflections=True,
+    )
+    assert entries == [(short_sentence, "", "Pierogi", "", "")]
