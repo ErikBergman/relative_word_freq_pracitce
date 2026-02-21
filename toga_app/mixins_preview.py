@@ -143,13 +143,23 @@ class PreviewMixin:
             return
 
         merged_lemma_counts: Counter = Counter()
+        merged_lemma_forms: dict[str, Counter] = {}
         for _counts, groups in self.staged_results.values():
             for lemma, forms in groups.items():
                 merged_lemma_counts[lemma] += sum(forms.values())
+                dst = merged_lemma_forms.setdefault(lemma, Counter())
+                for form, count in forms.items():
+                    dst[form] += count
 
         buckets: dict[int, list[str]] = {i: [] for i in range(8)}
         for lemma, _count in merged_lemma_counts.most_common():
-            zipf = zipf_frequency(lemma, "pl")
+            # Bucket by the most common-known observed surface form of this lemma.
+            # This avoids underestimating very common lemmas whose infinitive is rarer.
+            forms = merged_lemma_forms.get(lemma, Counter())
+            if forms:
+                zipf = max(zipf_frequency(form, "pl") for form in forms.keys())
+            else:
+                zipf = zipf_frequency(lemma, "pl")
             level = int(math.floor(zipf))
             if level < 0 or level > 7:
                 continue
