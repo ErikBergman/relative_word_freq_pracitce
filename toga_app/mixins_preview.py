@@ -12,6 +12,15 @@ from extractor.frequency import blend_scores_from_terms, precompute_score_terms
 
 
 class PreviewMixin:
+    def _insert_ignore_words_box(self) -> None:
+        if self.ignore_words_box in self.main_box.children:
+            return
+        if hasattr(self, "listing_separator") and self.listing_separator in self.main_box.children:
+            idx = self.main_box.children.index(self.listing_separator)
+            self.main_box.insert(idx, self.ignore_words_box)
+        else:
+            self.main_box.add(self.ignore_words_box)
+
     def _set_zipf_controls_ready(self, ready: bool) -> None:
         self.zipf_min_slider.enabled = ready
         self.zipf_max_slider.enabled = ready
@@ -23,9 +32,8 @@ class PreviewMixin:
     def _toggle_ignore_words(self, _widget) -> None:
         self._debug("toggle ignore words", enabled=self.enable_ignore_words.value)
         if self.enable_ignore_words.value:
-            if self.ignore_words_box not in self.main_box.children:
-                self.main_box.add(self.ignore_words_box)
-                self._append_log("Ignore words box shown")
+            self._insert_ignore_words_box()
+            self._append_log("Ignore words box shown")
         else:
             if self.ignore_words_box in self.main_box.children:
                 self.main_box.remove(self.ignore_words_box)
@@ -66,8 +74,8 @@ class PreviewMixin:
         self.ignore_words_input.value = str(state.get("ignore_words_text", ""))
         enabled = bool(state.get("ignore_words_enabled", False))
         self.enable_ignore_words.value = enabled
-        if enabled and self.ignore_words_box not in self.main_box.children:
-            self.main_box.add(self.ignore_words_box)
+        if enabled:
+            self._insert_ignore_words_box()
 
     @staticmethod
     def _quantize_slider(value: float) -> float:

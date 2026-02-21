@@ -20,6 +20,10 @@ from .helpers import coerce_path, iter_paths_from_drop
 
 
 class RunMixin:
+    def start(self, _widget) -> None:
+        # Compatibility path for tests/older hooks.
+        self.start_tokenize(_widget)
+
     async def browse(self, _widget) -> None:
         try:
             result = await self.main_window.dialog(
@@ -49,8 +53,27 @@ class RunMixin:
         self.file_list.value = "\n".join(str(p) for p in self.files)
         self._append_log(f"Added file: {path}")
 
-    def start(self, _widget) -> None:
-        self._debug("start pressed", is_running=self.is_running, files=len(self.files))
+    def clear_files(self, _widget) -> None:
+        if self.is_running:
+            self._append_log("Cannot clear file list while processing")
+            return
+        if not self.files:
+            return
+        self.files.clear()
+        self.file_list.value = ""
+        self.staged_results.clear()
+        self.staged_sentences.clear()
+        self._preview_terms_cache.clear()
+        self._clear_zipf_examples()
+        self._set_listing_controls_ready(False)
+        self.export_btn.enabled = False
+        if self.cancel_btn in self.tokenize_button_row.children:
+            self.tokenize_button_row.remove(self.cancel_btn)
+        self._refresh_preview()
+        self._append_log("Cleared file list")
+
+    def start_tokenize(self, _widget) -> None:
+        self._debug("tokenize pressed", is_running=self.is_running, files=len(self.files))
         if self.is_running:
             return
         if not self.files:
@@ -67,7 +90,7 @@ class RunMixin:
         out_dir = Path("output_html")
         out_dir.mkdir(exist_ok=True)
         self._append_log(
-            f"Start run: files={len(self.files)} limit={limit_value} "
+            f"Start tokenize: files={len(self.files)} limit={limit_value} "
             f"use_wordfreq={settings.use_wordfreq} allow_ones={settings.allow_ones} "
             f"allow_inflections={settings.allow_inflections} "
             f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f} "
@@ -80,16 +103,52 @@ class RunMixin:
         self.step_totals = {"clean": 1, "tokenize": 0, "lemmatize": 0, "count": 1}
         self.cancel_requested = False
         self.is_running = True
-        self.start_btn.enabled = False
+        self.tokenize_btn.enabled = False
+        self.clear_files_btn.enabled = False
+        self._set_listing_controls_ready(False)
+        self._debug("run dispatch", mode="tokenize")
+        self._run_tokenize_stage(settings)
+
+    def start_export(self, _widget) -> None:
         self._debug(
-            "run dispatch",
-            mode=("rank" if self.start_btn.text == "Rank" else "tokenize"),
+            "export pressed",
+            is_running=self.is_running,
+            staged_files=len(self.staged_results),
+        )
+        if self.is_running:
+            return
+        if not self.staged_results:
+            self.main_window.error_dialog(
+                "Tokenization required",
+                "Run Tokenize first to enable listing/export.",
+            )
+            return
+
+        try:
+            limit_value = int(self.limit_input.value or 50)
+        except ValueError:
+            self.main_window.error_dialog("Invalid limit", "Limit must be a number.")
+            return
+
+        settings = self._current_settings(limit_value=limit_value)
+        out_dir = Path("output_html")
+        out_dir.mkdir(exist_ok=True)
+        self._append_log(
+            f"Start export: staged_files={len(self.staged_results)} limit={limit_value} "
+            f"allow_ones={settings.allow_ones} allow_inflections={settings.allow_inflections} "
+            f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f} "
+            f"balance_a={settings.balance_a:.2f}"
         )
 
-        if self.start_btn.text == "Rank":
-            self._run_rank_stage(settings, out_dir)
-        else:
-            self._run_tokenize_stage(settings)
+        self.progress.value = 0
+        self.progress.max = max(1, len(self.staged_results))
+        self.cancel_requested = False
+        self.is_running = True
+        self.tokenize_btn.enabled = False
+        self.clear_files_btn.enabled = False
+        self._set_listing_controls_ready(False)
+        self._debug("run dispatch", mode="rank")
+        self._run_rank_stage(settings, out_dir)
 
     def _run_tokenize_stage(self, settings: Settings) -> None:
         self.staged_results.clear()
@@ -180,10 +239,9 @@ class RunMixin:
                 self._rebuild_preview_cache()
                 self._update_zipf_examples()
                 self._refresh_preview()
-                self._set_zipf_controls_ready(True)
-                self.start_btn.text = "Rank"
-                if self.cancel_btn not in self.button_row.children:
-                    self.button_row.add(self.cancel_btn)
+                self._set_listing_controls_ready(True)
+                if self.cancel_btn not in self.tokenize_button_row.children:
+                    self.tokenize_button_row.add(self.cancel_btn)
                 self._finish_run()
 
             self.main_window.app.loop.call_soon_threadsafe(done)
@@ -268,11 +326,10 @@ class RunMixin:
         self.staged_results.clear()
         self.staged_sentences.clear()
         self._preview_terms_cache.clear()
-        self.start_btn.text = "Tokenize"
-        if self.cancel_btn in self.button_row.children:
-            self.button_row.remove(self.cancel_btn)
+        if self.cancel_btn in self.tokenize_button_row.children:
+            self.tokenize_button_row.remove(self.cancel_btn)
         self._clear_zipf_examples()
-        self._set_zipf_controls_ready(False)
+        self._set_listing_controls_ready(False)
         self._refresh_preview()
         self._append_log("Staged tokenization cleared")
 
@@ -284,18 +341,19 @@ class RunMixin:
         )
         self.is_running = False
         self.cancel_requested = False
-        self.start_btn.enabled = True
+        self.tokenize_btn.enabled = True
+        self.clear_files_btn.enabled = True
         if reset_rank_state:
             self.staged_results.clear()
             self.staged_sentences.clear()
             self._preview_terms_cache.clear()
-            self.start_btn.text = "Tokenize"
-            if self.cancel_btn in self.button_row.children:
-                self.button_row.remove(self.cancel_btn)
+            if self.cancel_btn in self.tokenize_button_row.children:
+                self.tokenize_button_row.remove(self.cancel_btn)
             self._clear_zipf_examples()
-            self._set_zipf_controls_ready(False)
+            self._set_listing_controls_ready(False)
             self._refresh_preview()
         elif self.staged_results:
-            self._set_zipf_controls_ready(True)
+            self._set_listing_controls_ready(True)
+            self.export_btn.enabled = True
         else:
-            self._set_zipf_controls_ready(False)
+            self._set_listing_controls_ready(False)

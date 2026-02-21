@@ -53,6 +53,14 @@ class PolishVocabApp(
             style=Pack(flex=1, height=120),
         )
         browse_btn = toga.Button("Browse…", on_press=self.browse, style=Pack(margin_top=5))
+        self.clear_files_btn = toga.Button(
+            "Clear list",
+            on_press=self.clear_files,
+            style=Pack(margin_top=5, margin_left=8),
+        )
+        file_actions_row = toga.Box(style=Pack(direction=ROW))
+        file_actions_row.add(browse_btn)
+        file_actions_row.add(self.clear_files_btn)
 
         self.start_input = toga.TextInput(
             value="Download mp3 file:", style=Pack(flex=1)
@@ -117,12 +125,20 @@ class PolishVocabApp(
         self.log_box = toga.MultilineTextInput(
             readonly=True, style=Pack(flex=1, height=130, margin_top=8)
         )
-        self.start_btn = toga.Button(
-            "Tokenize", on_press=self.start, style=Pack(margin_top=10)
+        self.tokenize_btn = toga.Button(
+            "Tokenize", on_press=self.start_tokenize, style=Pack(margin_top=8)
         )
+        self.export_btn = toga.Button(
+            "Create Lists + Export",
+            on_press=self.start_export,
+            style=Pack(margin_top=8),
+        )
+        self.export_btn.enabled = False
         self.cancel_btn = toga.Button(
-            "Cancel", on_press=self.cancel, style=Pack(margin_top=10, margin_left=8)
+            "Cancel", on_press=self.cancel, style=Pack(margin_top=8, margin_left=8)
         )
+        # Backward compatibility for tests/helpers that still reference start_btn.
+        self.start_btn = self.tokenize_btn
 
         rules_box = toga.Box(style=Pack(direction=COLUMN, flex=1, margin_right=10))
         rules_box.add(toga.Label("Start marker"))
@@ -130,31 +146,60 @@ class PolishVocabApp(
         rules_box.add(toga.Label("End marker", style=Pack(margin_top=8)))
         rules_box.add(self.end_input)
 
-        options_box = toga.Box(style=Pack(direction=COLUMN, flex=1))
-        options_box.add(toga.Label("Options"))
-        options_box.add(self.allow_ones)
-        options_box.add(self.allow_inflections)
-        options_box.add(self.enable_ignore_words)
-        options_box.add(toga.Label("Balance (absolute vs relative)", style=Pack(margin_top=8)))
-        options_box.add(self.balance_label)
-        options_box.add(self.balance_slider)
-        options_box.add(toga.Label("Limit", style=Pack(margin_top=8)))
-        options_box.add(self.limit_input)
+        token_options_box = toga.Box(style=Pack(direction=COLUMN, flex=1))
+        token_options_box.add(toga.Label("Tokenization options"))
+        token_options_box.add(self.enable_ignore_words)
 
-        top_row = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        top_row = toga.Box(style=Pack(direction=ROW, margin_top=8))
         top_row.add(rules_box)
-        top_row.add(options_box)
+        top_row.add(token_options_box)
+
+        export_options_box = toga.Box(style=Pack(direction=COLUMN, flex=1))
+        export_options_box.add(toga.Label("Listing + export options"))
+        export_options_box.add(self.allow_ones)
+        export_options_box.add(self.allow_inflections)
+        export_options_box.add(
+            toga.Label("Balance (absolute vs relative)", style=Pack(margin_top=8))
+        )
+        export_options_box.add(self.balance_label)
+        export_options_box.add(self.balance_slider)
+        export_options_box.add(
+            toga.Label("Max number of phrases per document", style=Pack(margin_top=8))
+        )
+        export_options_box.add(self.limit_input)
+
+        self.tokenize_button_row = toga.Box(style=Pack(direction=ROW))
+        self.tokenize_button_row.add(self.tokenize_btn)
+        self.export_button_row = toga.Box(style=Pack(direction=ROW))
+        self.export_button_row.add(self.export_btn)
+
+        self.tokenization_section_label = toga.Label(
+            "1) Tokenization",
+            style=Pack(font_size=16, font_weight="bold"),
+        )
+        self.listing_separator = toga.Box(
+            style=Pack(height=1, background_color="#b8b8b8", margin_top=12, margin_bottom=6)
+        )
+        self.listing_section_label = toga.Label(
+            "2) Listing + Export",
+            style=Pack(font_size=16, font_weight="bold"),
+        )
 
         main_box = toga.Box(style=Pack(direction=COLUMN, margin=12))
-        main_box.add(toga.Label("Files"))
+        main_box.add(self.tokenization_section_label)
+        main_box.add(toga.Label("Files", style=Pack(margin_top=4)))
         main_box.add(self.file_list)
-        main_box.add(browse_btn)
+        main_box.add(file_actions_row)
         main_box.add(top_row)
+        main_box.add(self.tokenize_button_row)
+
+        main_box.add(self.listing_separator)
+        main_box.add(self.listing_section_label)
+        main_box.add(export_options_box)
         main_box.add(self.zipf_box)
+        main_box.add(self.export_button_row)
+
         main_box.add(self.progress)
-        self.button_row = toga.Box(style=Pack(direction=ROW))
-        self.button_row.add(self.start_btn)
-        main_box.add(self.button_row)
         main_box.add(toga.Label("Log", style=Pack(margin_top=8)))
         main_box.add(self.log_box)
 
@@ -195,9 +240,24 @@ class PolishVocabApp(
             self.main_window.on_drop = self.on_drop
         except Exception:
             pass
+        self._listing_controls = [
+            self.allow_ones,
+            self.allow_inflections,
+            self.balance_slider,
+            self.limit_input,
+            self.export_btn,
+        ]
+        self._set_listing_controls_ready(False)
         self._load_persistent_state()
         self._append_log("GUI initialized")
         self._debug("startup complete", ignore_enabled=self.enable_ignore_words.value)
+
+    def _set_listing_controls_ready(self, ready: bool) -> None:
+        for widget in self._listing_controls:
+            widget.enabled = ready
+        if not ready:
+            self.export_btn.enabled = False
+        self._set_zipf_controls_ready(ready)
 
 
 def main() -> None:

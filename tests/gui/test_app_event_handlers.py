@@ -91,11 +91,13 @@ def test_cancel_idle_clears_state_and_resets_controls() -> None:
     app.staged_results = {"x": ({"a": 1}, {"a": {"a": 1}})}
     app.staged_sentences = {"x": ["Ala ma kota."]}
     app._preview_terms_cache = {"x": 1}
-    app.start_btn = SimpleNamespace(text="Rank")
+    app.tokenize_btn = SimpleNamespace(enabled=True)
+    app.export_btn = SimpleNamespace(enabled=True)
+    app.start_btn = app.tokenize_btn
     app.cancel_btn = object()
-    app.button_row = _Box([app.cancel_btn])
+    app.tokenize_button_row = _Box([app.cancel_btn])
     app._clear_zipf_examples = lambda: None
-    app._set_zipf_controls_ready = lambda ready: ready_calls.append(ready)
+    app._set_listing_controls_ready = lambda ready: ready_calls.append(ready)
     app._refresh_preview = lambda: None
     app._append_log = logs.append
 
@@ -104,7 +106,37 @@ def test_cancel_idle_clears_state_and_resets_controls() -> None:
     assert app.staged_results == {}
     assert app.staged_sentences == {}
     assert app._preview_terms_cache == {}
-    assert app.start_btn.text == "Tokenize"
-    assert app.cancel_btn not in app.button_row.children
+    assert app.cancel_btn not in app.tokenize_button_row.children
     assert ready_calls == [False]
     assert logs and logs[-1] == "Staged tokenization cleared"
+
+
+def test_clear_files_clears_file_and_staged_state() -> None:
+    app = _new_app()
+    logs: list[str] = []
+    ready_calls: list[bool] = []
+    app.is_running = False
+    app.files = ["a.html", "b.html"]
+    app.file_list = SimpleNamespace(value="a.html\nb.html")
+    app.staged_results = {"x": ({"a": 1}, {"a": {"a": 1}})}
+    app.staged_sentences = {"x": ["Ala ma kota."]}
+    app._preview_terms_cache = {"x": 1}
+    app.export_btn = SimpleNamespace(enabled=True)
+    app.cancel_btn = object()
+    app.tokenize_button_row = _Box([app.cancel_btn])
+    app._clear_zipf_examples = lambda: None
+    app._set_listing_controls_ready = lambda ready: ready_calls.append(ready)
+    app._refresh_preview = lambda: None
+    app._append_log = logs.append
+
+    app.clear_files(None)
+
+    assert app.files == []
+    assert app.file_list.value == ""
+    assert app.staged_results == {}
+    assert app.staged_sentences == {}
+    assert app._preview_terms_cache == {}
+    assert app.export_btn.enabled is False
+    assert app.cancel_btn not in app.tokenize_button_row.children
+    assert ready_calls == [False]
+    assert logs and logs[-1] == "Cleared file list"
