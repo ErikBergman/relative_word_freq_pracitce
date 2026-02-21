@@ -250,7 +250,7 @@ def append_unique_clozemaster_entries(
     existing: set[tuple[str, str, str, str, str]] = set()
     if csv_path.exists():
         with csv_path.open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.reader(handle, delimiter=";")
+            reader = csv.reader(handle, delimiter="\t")
             for row in reader:
                 if len(row) >= 5:
                     existing.add((row[0], row[1], row[2], row[3], row[4]))
@@ -259,13 +259,21 @@ def append_unique_clozemaster_entries(
     skipped = 0
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     with csv_path.open("a", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, delimiter=";")
+        writer = csv.writer(handle, delimiter="\t")
         for entry in entries:
-            if entry in existing:
+            entry = (
+                _remove_unmatched_parentheses(entry[0]),
+                _remove_unmatched_parentheses(entry[1]),
+                entry[2],
+                entry[3],
+                entry[4],
+            )
+            normalized = tuple(_normalize_tsv_field(part) for part in entry)
+            if normalized in existing:
                 skipped += 1
                 continue
-            writer.writerow(entry)
-            existing.add(entry)
+            writer.writerow(normalized)
+            existing.add(normalized)
             added += 1
 
     return (added, skipped)
@@ -285,14 +293,42 @@ def apply_translations_to_clozemaster_entries(
         sentence_to_translation[source] = target
 
     output: list[tuple[str, str, str, str, str]] = []
-    for sentence_pl, _sentence_en, word, pron, comment in entries:
+    for sentence_pl_raw, _sentence_en, word, pron, comment in entries:
+        sentence_pl = _remove_unmatched_parentheses(sentence_pl_raw)
+        sentence_en = _remove_unmatched_parentheses(
+            sentence_to_translation.get(sentence_pl_raw, "")
+        )
         output.append(
             (
                 sentence_pl,
-                sentence_to_translation.get(sentence_pl, ""),
+                sentence_en,
                 word,
                 pron,
                 comment,
             )
         )
     return output
+
+
+def _remove_unmatched_parentheses(text: str) -> str:
+    chars = list(text)
+    stack: list[int] = []
+    keep = [True] * len(chars)
+
+    for i, ch in enumerate(chars):
+        if ch == "(":
+            stack.append(i)
+        elif ch == ")":
+            if stack:
+                stack.pop()
+            else:
+                keep[i] = False
+
+    for i in stack:
+        keep[i] = False
+
+    return "".join(ch for ch, ok in zip(chars, keep) if ok)
+
+
+def _normalize_tsv_field(value: str) -> str:
+    return value.replace("\t", " ").replace("\r", " ").replace("\n", " ").strip()

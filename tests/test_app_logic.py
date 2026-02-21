@@ -113,7 +113,7 @@ def test_build_clozemaster_entries_preserves_capitalization() -> None:
 
 
 def test_append_unique_clozemaster_entries_deduplicates(tmp_path) -> None:
-    csv_path = tmp_path / "clozemaster_input_realpolish.csv"
+    csv_path = tmp_path / "clozemaster_input_realpolish.tsv"
     entries = [
         ("Pierogi są bardzo smaczne.", "", "Pierogi", "", ""),
         ("Lubię jeść pierogi z mięsem.", "", "pierogi", "", ""),
@@ -126,6 +126,19 @@ def test_append_unique_clozemaster_entries_deduplicates(tmp_path) -> None:
 
     lines = csv_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
+    assert "\t" in lines[0]
+
+
+def test_append_unique_clozemaster_entries_removes_unmatched_parentheses(tmp_path) -> None:
+    csv_path = tmp_path / "clozemaster_input_realpolish.tsv"
+    entries = [
+        ("To jest (test.", "This is a test)", "test", "", ""),
+    ]
+    added, skipped = append_unique_clozemaster_entries(csv_path, entries)
+    assert (added, skipped) == (1, 0)
+    line = csv_path.read_text(encoding="utf-8").strip()
+    # '(' removed from PL, ')' removed from EN
+    assert line.startswith("To jest test.\tThis is a test")
 
 
 def test_build_clozemaster_entries_skips_sentences_over_300_chars() -> None:

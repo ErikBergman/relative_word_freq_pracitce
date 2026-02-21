@@ -63,3 +63,14 @@ def test_apply_translations_empty_input_is_noop() -> None:
     assert apply_translations_to_clozemaster_entries([], translator) == []
     assert translator.calls == []
 
+
+def test_apply_translations_removes_unmatched_parentheses() -> None:
+    entries = [("Mamy (test).", "", "test", "", "")]
+
+    class _BrokenParensTranslator:
+        def translate_many(self, _sentences: list[str]) -> list[str]:
+            return ["We have (a test."]
+
+    got = apply_translations_to_clozemaster_entries(entries, _BrokenParensTranslator())
+    assert got[0][0] == "Mamy (test)."
+    assert got[0][1] == "We have a test."

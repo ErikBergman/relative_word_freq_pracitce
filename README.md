@@ -11,7 +11,7 @@ It tokenizes and lemmatizes with UDPipe, ranks words against general corpus freq
 - Zipf min/max filtering.
 - Two-stage GUI flow: `Tokenize` then `Create Lists + Export`.
 - Optional ignore patterns (wildcards), persisted between sessions.
-- Clozemaster export to `clozemaster_input_realpolish.csv`.
+- Clozemaster export to `clozemaster_input_realpolish.tsv`.
 - Optional Polish->English sentence translation for Clozemaster export (OPUS-MT).
 
 ## Quick Start
@@ -88,7 +88,7 @@ python polish_vocab.py data/your_file.html
 
 ## Output
 - HTML list per source file in `output_html/`.
-- Appended deduplicated Clozemaster rows in `clozemaster_input_realpolish.csv`.
+- Appended deduplicated Clozemaster rows in `clozemaster_input_realpolish.tsv`.
 - Clozemaster sentence rows longer than 300 chars are discarded.
 
 ## Notes

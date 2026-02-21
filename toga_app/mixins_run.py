@@ -322,7 +322,7 @@ class RunMixin:
                     out_path.write_text(html, encoding="utf-8")
                     self._append_log(f"Wrote: {out_path}")
                 added, skipped = append_unique_clozemaster_entries(
-                    Path("clozemaster_input_realpolish.csv"), clozemaster_entries
+                    Path("clozemaster_input_realpolish.tsv"), clozemaster_entries
                 )
                 self._append_log(
                     "Clozemaster CSV updated: "
