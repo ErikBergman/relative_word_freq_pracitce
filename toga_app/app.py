@@ -78,6 +78,11 @@ class PolishVocabApp(
         self.allow_inflections = toga.Switch(
             "Include inflections in list", on_change=self._on_preview_option_change
         )
+        self.translate_clozemaster = toga.Switch("Translate Clozemaster sentences (OPUS)")
+        self.translation_model_input = toga.TextInput(
+            value="Helsinki-NLP/opus-mt-pl-en",
+            style=Pack(flex=1),
+        )
         self.enable_ignore_words = toga.Switch(
             "Ignore words", on_change=self._toggle_ignore_words
         )
@@ -158,6 +163,11 @@ class PolishVocabApp(
         export_options_box.add(toga.Label("Listing + export options"))
         export_options_box.add(self.allow_ones)
         export_options_box.add(self.allow_inflections)
+        export_options_box.add(self.translate_clozemaster)
+        export_options_box.add(
+            toga.Label("Translation model", style=Pack(margin_top=8))
+        )
+        export_options_box.add(self.translation_model_input)
         export_options_box.add(
             toga.Label("Balance (absolute vs relative)", style=Pack(margin_top=8))
         )
@@ -243,6 +253,8 @@ class PolishVocabApp(
         self._listing_controls = [
             self.allow_ones,
             self.allow_inflections,
+            self.translate_clozemaster,
+            self.translation_model_input,
             self.balance_slider,
             self.limit_input,
             self.export_btn,

@@ -1,118 +1,102 @@
-# 🇵🇱 Polish Vocabulary Extractor
+# Polish Vocabulary Extractor
 
-This is a personal NLP tool that helps language learners extract and prioritize vocabulary from any Polish text (e.g. articles, stories, blog posts). It identifies the **most "unusually" frequent** words by comparing the input text to general Polish usage.
+Desktop + CLI tool for extracting and ranking Polish vocabulary from HTML/text sources.
 
----
+It tokenizes and lemmatizes with UDPipe, ranks words against general corpus frequency, exports per-file HTML lists, and appends deduplicated Clozemaster rows.
 
-## ✨ Features
+## Core Features
+- HTML cleaning with configurable start/end markers.
+- UDPipe tokenization + lemma grouping.
+- Ranking with blended absolute/relative scoring (`wordfreq`-based).
+- Zipf min/max filtering.
+- Two-stage GUI flow: `Tokenize` then `Create Lists + Export`.
+- Optional ignore patterns (wildcards), persisted between sessions.
+- Clozemaster export to `clozemaster_input_realpolish.csv`.
+- Optional Polish->English sentence translation for Clozemaster export (OPUS-MT).
 
-* Cleans HTML and input noise using `BeautifulSoup`
-* Trims HTML to a configurable start/end range from `config.json`
-* Tokenizes and lemmatizes Polish words using **UDPipe**
-* Clusters conjugated forms to their root lemma
-* Compares word frequencies to general Polish usage with `wordfreq`
-* Uses Zipf-frequency difference to surface the most *notably frequent* words
-* Outputs a sorted list of lemmas for vocabulary study (stdout)
+## Quick Start
+1. Install dependencies.
+2. Ensure UDPipe model file exists in `data/udpipe/`.
+3. (Optional) Pre-cache OPUS Polish->English model for translation.
+4. Run `python app_toga.py`.
+5. Tokenize first, then export.
 
----
+## Install
 
-## 📦 Dependencies
+### Core dependencies
+```bash
+pip install beautifulsoup4 ufal.udpipe wordfreq rich toga
+```
 
-Install via `pip`:
+### Optional translation dependencies
+```bash
+pip install transformers sentencepiece torch
+```
+
+## Prepare Models
+
+### 1) UDPipe model (required)
+The app expects:
+- `data/udpipe/polish-pdb-ud-2.5-191206.udpipe`
+
+### 2) OPUS Polish->English model (optional, recommended to prewarm)
+If you enable translation in the GUI, pre-download the model once to avoid first-run stall:
 
 ```bash
-pip install beautifulsoup4 ufal.udpipe wordfreq rich
+python - <<'PY'
+from transformers import MarianMTModel, MarianTokenizer
+name = "Helsinki-NLP/opus-mt-pl-en"
+MarianTokenizer.from_pretrained(name)
+MarianMTModel.from_pretrained(name)
+print("Cached:", name)
+PY
 ```
 
-💡 **Note:** UDPipe requires Polish model files in `data/udpipe/`.
+Default cache path (if not overridden):
+- `~/.cache/huggingface/hub/models--Helsinki-NLP--opus-mt-pl-en`
 
----
+## Run
 
-## 📁 Folder Structure
-
-```
-polish_vocab_extractor/
-│
-├── config.json                  # Start/end markers for main content
-├── data/
-│   └── sample_input.html         # Polish text file or pasted HTML
-│   └── udpipe/                    # UDPipe model files
-│
-├── polish_vocab.py              # Main execution script
-├── extractor/
-│   ├── __init__.py
-│   ├── cleaner.py               # HTML/text cleaning
-│   ├── tokenizer.py             # UDPipe lemmatizer
-│   ├── frequency.py             # wordfreq Zipf-diff scoring
-│   └── utils.py                 # Shared helpers
-│
-└── README.md
-```
-
----
-
-## 🚀 How It Works
-
-1. **Input**: You provide a block of Polish text or HTML content.
-2. **Preprocessing**: `config.json` defines the start/end markers for main content, then `BeautifulSoup` strips tags and formatting.
-3. **Tokenization**: UDPipe splits text and finds lemmas.
-4. **Frequency Comparison**:
-
-   * `wordfreq` estimates global word frequency
-   * Words are scored by their *local vs. global* frequency difference (Zipf scale)
-5. **Output**: You get a ranked list printed to stdout.
-
----
-
-## ⚠️ Known Limitations
-
-* Some proper nouns or idioms may not be well-handled by UDPipe
-* Frequency comparison relies on generic corpora (context-insensitive)
-* Definitions and translations are not provided (yet)
-* GUI is available but currently minimal
-
----
-
-## 🛠️ Future Features
-
-* Gloss lookups from Wiktionary
-* Flashcard deck export (.csv or Anki format)
-* Web app or notebook interface
-* Interactive CLI (e.g. `typer`-based)
-* Filtering by part-of-speech (e.g. only nouns or verbs)
-
----
-
-## 👤 Author
-
-This tool was built as a personal project to aid Polish language acquisition. Contributions or ideas welcome!
-
----
-
-Let me know if you'd like this saved as a file, or if you want to move forward with implementing the `tokenizer.py` module using `spaCy` + `Morfeusz2`.
-## 🧰 CLI Options
-
-* Default: uses `wordfreq` scoring (local vs. global frequency).
-* `--plain`: show the raw top list without `wordfreq` scoring.
-* `--allow-ones`: include words that appear only once (default excludes them).
-* `--allow-inflections-in-list`: include inflected forms in the top list (default shows only lemmas).
-
-## 🖥️ GUI (Toga)
-
-Install Toga:
-
-```bash
-pip install toga
-```
-
-Run:
-
+### GUI
 ```bash
 python app_toga.py
 ```
 
-The GUI lets you:
-* Set start/end markers for cleaning
-* Drag and drop files or browse
-* Toggle options and limit
-* Run extraction and save HTML tables to `output_html/`
+### CLI
+```bash
+python polish_vocab.py data/your_file.html
+```
+
+## GUI Workflow
+
+### 1) Tokenization
+- Add files (drag/drop or Browse).
+- Set start/end markers.
+- Optional: enable `Ignore words` and enter wildcard patterns (one per line).
+- Click `Tokenize`.
+
+### 2) Listing + Export
+- Controls are enabled only after tokenization.
+- Set:
+  - `Include words with frequency 1`
+  - `Include inflections in list`
+  - Zipf min/max sliders
+  - `Balance (absolute vs relative)` slider
+  - `Max number of phrases per document`
+  - Optional `Translate Clozemaster sentences (OPUS)`
+- Click `Create Lists + Export`.
+
+## Output
+- HTML list per source file in `output_html/`.
+- Appended deduplicated Clozemaster rows in `clozemaster_input_realpolish.csv`.
+- Clozemaster sentence rows longer than 300 chars are discarded.
+
+## Notes
+- Ignore patterns support wildcards (`*`, `?`) and are persisted in `.cache/app_toga_state.json`.
+- First-time translation can be slow if the OPUS model is not already cached.
+- Translation is optional; if disabled, Clozemaster English field stays empty.
+
+## Tests
+```bash
+pytest -q
+```

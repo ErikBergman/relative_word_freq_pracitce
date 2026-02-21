@@ -9,10 +9,12 @@ import toga
 
 from app_logic import Settings, apply_ignore_patterns, build_rows, render_html
 from app_logic import (
+    apply_translations_to_clozemaster_entries,
     append_unique_clozemaster_entries,
     build_clozemaster_entries,
     split_sentences,
 )
+from extractor.translation import OpusMtTranslator
 from extractor.cleaner import extract_text
 from extractor.tokenizer import lemma_groups, tokenize
 
@@ -137,7 +139,9 @@ class RunMixin:
             f"Start export: staged_files={len(self.staged_results)} limit={limit_value} "
             f"allow_ones={settings.allow_ones} allow_inflections={settings.allow_inflections} "
             f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f} "
-            f"balance_a={settings.balance_a:.2f}"
+            f"balance_a={settings.balance_a:.2f} "
+            f"translate_clozemaster={settings.translate_clozemaster} "
+            f"translation_model={settings.translation_model}"
         )
 
         self.progress.value = 0
@@ -281,6 +285,21 @@ class RunMixin:
                     )
                     self.main_window.app.loop.call_soon_threadsafe(
                         lambda: setattr(self.progress, "value", self.progress.value + 1)
+                    )
+
+                if settings.translate_clozemaster and clozemaster_entries:
+                    self.main_window.app.loop.call_soon_threadsafe(
+                        lambda: self._append_log(
+                            f"Translating {len(clozemaster_entries)} Clozemaster rows "
+                            f"with {settings.translation_model}..."
+                        )
+                    )
+                    translator = OpusMtTranslator(model_name=settings.translation_model)
+                    clozemaster_entries = apply_translations_to_clozemaster_entries(
+                        clozemaster_entries, translator
+                    )
+                    self.main_window.app.loop.call_soon_threadsafe(
+                        lambda: self._append_log("Translation step finished")
                     )
             except Exception as exc:
                 tb = traceback.format_exc()

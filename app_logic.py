@@ -28,6 +28,8 @@ class Settings:
     max_zipf: float = 7.0
     balance_a: float = 0.5
     ignore_patterns: tuple[str, ...] = ()
+    translate_clozemaster: bool = False
+    translation_model: str = "Helsinki-NLP/opus-mt-pl-en"
 
 
 @dataclass(frozen=True)
@@ -267,3 +269,30 @@ def append_unique_clozemaster_entries(
             added += 1
 
     return (added, skipped)
+
+
+def apply_translations_to_clozemaster_entries(
+    entries: list[tuple[str, str, str, str, str]],
+    translator,
+) -> list[tuple[str, str, str, str, str]]:
+    if not entries:
+        return entries
+
+    sentence_to_translation: dict[str, str] = {}
+    unique_sentences = list(dict.fromkeys(sentence for sentence, *_ in entries))
+    translated = translator.translate_many(unique_sentences)
+    for source, target in zip(unique_sentences, translated):
+        sentence_to_translation[source] = target
+
+    output: list[tuple[str, str, str, str, str]] = []
+    for sentence_pl, _sentence_en, word, pron, comment in entries:
+        output.append(
+            (
+                sentence_pl,
+                sentence_to_translation.get(sentence_pl, ""),
+                word,
+                pron,
+                comment,
+            )
+        )
+    return output

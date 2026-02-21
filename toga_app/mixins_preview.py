@@ -181,6 +181,11 @@ class PreviewMixin:
             min_zipf=float(self.zipf_min_slider.value),
             max_zipf=float(self.zipf_max_slider.value),
             balance_a=float(self.balance_slider.value),
+            translate_clozemaster=bool(self.translate_clozemaster.value),
+            translation_model=(
+                (self.translation_model_input.value or "").strip()
+                or "Helsinki-NLP/opus-mt-pl-en"
+            ),
             ignore_patterns=(
                 tuple(
                     line.strip().lower()
