@@ -204,7 +204,8 @@ class PolishVocabApp(
 
         main_box = toga.Box(style=Pack(direction=COLUMN, margin=12))
         main_box.add(self.tokenization_section_label)
-        main_box.add(toga.Label("Files", style=Pack(margin_top=4)))
+        self.sources_label = toga.Label("Files and links", style=Pack(margin_top=4))
+        main_box.add(self.sources_label)
         main_box.add(self.file_list)
         main_box.add(file_actions_row)
         main_box.add(top_row)

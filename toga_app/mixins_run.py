@@ -19,11 +19,17 @@ from app_logic import (
 from extractor.translation import OpusMtTranslator
 from extractor.cleaner import extract_text
 from extractor.tokenizer import lemma_groups, tokenize
+from extractor.youtube import fetch_youtube_caption_text
 
 from .helpers import coerce_path, iter_paths_from_drop
 
 
 class RunMixin:
+    def _refresh_sources_display(self) -> None:
+        lines: list[str] = [str(p) for p in self.files]
+        lines.extend(f"[YouTube] {link}" for link in getattr(self, "youtube_links", []))
+        self.file_list.value = "\n".join(lines)
+
     def start(self, _widget) -> None:
         # Compatibility path for tests/older hooks.
         self.start_tokenize(_widget)
@@ -66,7 +72,7 @@ class RunMixin:
             style=Pack(margin_top=8),
         )
         close_btn = toga.Button(
-            "Close",
+            "Cancel",
             on_press=self._close_youtube_links_window,
             style=Pack(margin_top=8, margin_left=8),
         )
@@ -88,13 +94,17 @@ class RunMixin:
         raw = (getattr(self, "_youtube_links_input", None).value or "")
         links = [line.strip() for line in raw.splitlines() if line.strip()]
         self.youtube_links = links
+        self._refresh_sources_display()
         self._append_log(f"Saved YouTube links: {len(links)}")
+        window = getattr(self, "_youtube_window", None)
+        if window is not None:
+            window.close()
+            self._youtube_window = None
 
     def _close_youtube_links_window(self, _widget) -> None:
         window = getattr(self, "_youtube_window", None)
         if window is None:
             return
-        self._save_youtube_links(_widget)
         window.close()
         self._youtube_window = None
 
@@ -107,7 +117,7 @@ class RunMixin:
         if path in self.files:
             return
         self.files.append(path)
-        self.file_list.value = "\n".join(str(p) for p in self.files)
+        self._refresh_sources_display()
         self._append_log(f"Added file: {path}")
 
     def clear_files(self, _widget) -> None:
@@ -115,9 +125,15 @@ class RunMixin:
             self._append_log("Cannot clear file list while processing")
             return
         if not self.files:
-            return
+            if not getattr(self, "youtube_links", []):
+                return
         self.files.clear()
-        self.file_list.value = ""
+        links = getattr(self, "youtube_links", None)
+        if links is None:
+            self.youtube_links = []
+        else:
+            links.clear()
+        self._refresh_sources_display()
         self.staged_results.clear()
         self.staged_sentences.clear()
         self._preview_terms_cache.clear()
@@ -133,7 +149,7 @@ class RunMixin:
         self._debug("tokenize pressed", is_running=self.is_running, files=len(self.files))
         if self.is_running:
             return
-        if not self.files:
+        if not self.files and not getattr(self, "youtube_links", []):
             self.main_window.error_dialog("No files", "Please add at least one file.")
             return
 
@@ -148,6 +164,7 @@ class RunMixin:
         out_dir.mkdir(exist_ok=True)
         self._append_log(
             f"Start tokenize: files={len(self.files)} limit={limit_value} "
+            f"youtube_links={len(getattr(self, 'youtube_links', []))} "
             f"use_wordfreq={settings.use_wordfreq} allow_ones={settings.allow_ones} "
             f"allow_inflections={settings.allow_inflections} "
             f"min_zipf={settings.min_zipf:.1f} max_zipf={settings.max_zipf:.1f} "
@@ -270,6 +287,45 @@ class RunMixin:
                         file=path.name,
                         token_types=len(counts),
                         lemmas=len(groups),
+                    )
+
+                for idx, url in enumerate(getattr(self, "youtube_links", []), start=1):
+                    if self.cancel_requested:
+                        break
+                    source_name = f"youtube_{idx:03d}"
+                    self.main_window.app.loop.call_soon_threadsafe(
+                        lambda u=url: self._append_log(f"Fetching YouTube captions: {u}")
+                    )
+                    text = fetch_youtube_caption_text(url)
+                    if not text.strip():
+                        self.main_window.app.loop.call_soon_threadsafe(
+                            lambda u=url: self._append_log(
+                                f"No captions found for: {u}"
+                            )
+                        )
+                        continue
+                    self.staged_sentences[source_name] = split_sentences(text)
+                    tokens = tokenize(text, progress=lambda t, a: report("tokenize", t, a))
+                    self._debug(
+                        "tokenize youtube tokens ready",
+                        source=source_name,
+                        token_count=len(tokens),
+                        sentence_count=len(self.staged_sentences[source_name]),
+                    )
+                    tokens = apply_ignore_patterns(tokens, settings.ignore_patterns)
+                    groups = lemma_groups(
+                        tokens,
+                        text=None,
+                        progress=lambda t, a: report("lemmatize", t, a),
+                    )
+                    counts = Counter(tokens)
+                    if not settings.allow_ones:
+                        counts = Counter({k: v for k, v in counts.items() if v > 1})
+                    self.staged_results[source_name] = (counts, groups)
+                    self.main_window.app.loop.call_soon_threadsafe(
+                        lambda n=source_name: self._append_log(
+                            f"Tokenized YouTube source: {n}"
+                        )
                     )
             except Exception as exc:
                 tb = traceback.format_exc()

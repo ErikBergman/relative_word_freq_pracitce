@@ -33,6 +33,12 @@ pip install beautifulsoup4 ufal.udpipe wordfreq rich toga
 pip install transformers sentencepiece torch
 ```
 
+### Optional YouTube captions dependency
+Install `yt-dlp` if you want to tokenize from YouTube caption links:
+```bash
+pip install yt-dlp
+```
+
 ## Prepare Models
 
 ### 1) UDPipe model (required)
@@ -71,6 +77,7 @@ python polish_vocab.py data/your_file.html
 
 ### 1) Tokenization
 - Add files (drag/drop or Browse).
+- Optional: click `YouTube links…` and paste one URL per line.
 - Set start/end markers.
 - Optional: enable `Ignore words` and enter wildcard patterns (one per line).
 - Click `Tokenize`.
