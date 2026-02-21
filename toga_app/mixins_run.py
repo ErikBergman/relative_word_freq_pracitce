@@ -6,6 +6,8 @@ from collections import Counter
 from pathlib import Path
 
 import toga
+from toga.style import Pack
+from toga.style.pack import COLUMN, ROW
 
 from app_logic import Settings, apply_ignore_patterns, build_rows, render_html
 from app_logic import (
@@ -42,6 +44,59 @@ class RunMixin:
             path = coerce_path(p)
             if path is not None:
                 self._add_file(path)
+
+    def open_youtube_links_window(self, _widget) -> None:
+        existing_window = getattr(self, "_youtube_window", None)
+        if existing_window is not None:
+            existing_window.show()
+            return
+
+        default_text = "\n".join(getattr(self, "youtube_links", []))
+        self._youtube_links_input = toga.MultilineTextInput(
+            value=default_text,
+            placeholder="Paste one YouTube URL per row",
+            style=Pack(flex=1, height=220),
+        )
+        info = toga.Label(
+            "Add one URL per line. Captions download is not implemented yet."
+        )
+        save_btn = toga.Button(
+            "Save links",
+            on_press=self._save_youtube_links,
+            style=Pack(margin_top=8),
+        )
+        close_btn = toga.Button(
+            "Close",
+            on_press=self._close_youtube_links_window,
+            style=Pack(margin_top=8, margin_left=8),
+        )
+        actions = toga.Box(style=Pack(direction=ROW))
+        actions.add(save_btn)
+        actions.add(close_btn)
+
+        content = toga.Box(style=Pack(direction=COLUMN, margin=12))
+        content.add(info)
+        content.add(self._youtube_links_input)
+        content.add(actions)
+
+        self._youtube_window = toga.MainWindow(title="YouTube Links")
+        self._youtube_window.content = content
+        self._youtube_window.size = (700, 420)
+        self._youtube_window.show()
+
+    def _save_youtube_links(self, _widget) -> None:
+        raw = (getattr(self, "_youtube_links_input", None).value or "")
+        links = [line.strip() for line in raw.splitlines() if line.strip()]
+        self.youtube_links = links
+        self._append_log(f"Saved YouTube links: {len(links)}")
+
+    def _close_youtube_links_window(self, _widget) -> None:
+        window = getattr(self, "_youtube_window", None)
+        if window is None:
+            return
+        self._save_youtube_links(_widget)
+        window.close()
+        self._youtube_window = None
 
     def on_drop(self, *args) -> None:
         for path in iter_paths_from_drop(*args):

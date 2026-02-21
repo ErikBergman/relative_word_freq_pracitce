@@ -28,6 +28,7 @@ class PolishVocabApp(
 
     def startup(self) -> None:
         self.files: list[Path] = []
+        self.youtube_links: list[str] = []
         self.staged_results: dict[str, tuple[Counter, dict[str, dict[str, int]]]] = {}
         self.staged_sentences: dict[str, list[str]] = {}
         self.is_running = False
@@ -53,6 +54,11 @@ class PolishVocabApp(
             style=Pack(flex=1, height=120),
         )
         browse_btn = toga.Button("Browse…", on_press=self.browse, style=Pack(margin_top=5))
+        youtube_btn = toga.Button(
+            "YouTube links…",
+            on_press=self.open_youtube_links_window,
+            style=Pack(margin_top=5, margin_left=8),
+        )
         self.clear_files_btn = toga.Button(
             "Clear list",
             on_press=self.clear_files,
@@ -60,6 +66,7 @@ class PolishVocabApp(
         )
         file_actions_row = toga.Box(style=Pack(direction=ROW))
         file_actions_row.add(browse_btn)
+        file_actions_row.add(youtube_btn)
         file_actions_row.add(self.clear_files_btn)
 
         self.start_input = toga.TextInput(
