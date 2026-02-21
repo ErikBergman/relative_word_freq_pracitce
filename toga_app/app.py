@@ -25,6 +25,11 @@ class PolishVocabApp(
     ZIPF_MIN = 0.0
     ZIPF_MAX = 7.0
     STATE_PATH = Path(".cache/app_toga_state.json")
+    COLOR_BG_APP = "#edf1f4"
+    COLOR_BG_CARD = "#f7f9fb"
+    COLOR_BG_INPUT = "#fdfefe"
+    COLOR_BG_PREVIEW = "#f3f6f9"
+    COLOR_DIVIDER = "#c8d2db"
 
     def startup(self) -> None:
         self.files: list[Path] = []
@@ -51,18 +56,25 @@ class PolishVocabApp(
         self.file_list = toga.MultilineTextInput(
             readonly=True,
             placeholder="Drag files here or use Browse…",
-            style=Pack(flex=1, height=120),
+            style=Pack(
+                flex=1,
+                height=120,
+                margin_top=6,
+                background_color=self.COLOR_BG_INPUT,
+            ),
         )
-        browse_btn = toga.Button("Browse…", on_press=self.browse, style=Pack(margin_top=5))
+        browse_btn = toga.Button(
+            "Browse…", on_press=self.browse, style=Pack(margin_top=8)
+        )
         youtube_btn = toga.Button(
             "YouTube links…",
             on_press=self.open_youtube_links_window,
-            style=Pack(margin_top=5, margin_left=8),
+            style=Pack(margin_top=8, margin_left=8),
         )
         self.clear_files_btn = toga.Button(
             "Clear list",
             on_press=self.clear_files,
-            style=Pack(margin_top=5, margin_left=8),
+            style=Pack(margin_top=8, margin_left=8),
         )
         file_actions_row = toga.Box(style=Pack(direction=ROW))
         file_actions_row.add(browse_btn)
@@ -96,9 +108,15 @@ class PolishVocabApp(
         self.ignore_words_input = toga.MultilineTextInput(
             placeholder="One pattern per line, wildcards allowed (e.g. *ing, rp*)",
             on_change=self._on_ignore_words_change,
-            style=Pack(height=120),
+            style=Pack(height=120, background_color=self.COLOR_BG_INPUT),
         )
-        self.ignore_words_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
+        self.ignore_words_box = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin_top=10,
+                background_color=self.COLOR_BG_CARD,
+            )
+        )
         self.ignore_words_box.add(
             toga.Label("Ignore patterns (one per row, supports * and ?)")
         )
@@ -123,7 +141,13 @@ class PolishVocabApp(
             label = toga.Label("—", style=Pack(flex=1, font_size=9))
             self.zipf_example_labels.append(label)
             self.zipf_example_row.add(label)
-        self.zipf_box = toga.Box(style=Pack(direction=COLUMN, margin_top=8))
+        self.zipf_box = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin_top=8,
+                background_color=self.COLOR_BG_CARD,
+            )
+        )
         self.zipf_box.add(self.zipf_value_label)
         self.zipf_box.add(self.zipf_min_label)
         self.zipf_box.add(self.zipf_min_slider)
@@ -135,19 +159,25 @@ class PolishVocabApp(
 
         self.progress = toga.ProgressBar(max=1, value=0, style=Pack(flex=1))
         self.log_box = toga.MultilineTextInput(
-            readonly=True, style=Pack(flex=1, height=130, margin_top=8)
+            readonly=True,
+            style=Pack(
+                flex=1,
+                height=130,
+                margin_top=6,
+                background_color=self.COLOR_BG_INPUT,
+            ),
         )
         self.tokenize_btn = toga.Button(
-            "Tokenize", on_press=self.start_tokenize, style=Pack(margin_top=8)
+            "Tokenize", on_press=self.start_tokenize, style=Pack(margin_top=10)
         )
         self.export_btn = toga.Button(
             "Create Lists + Export",
             on_press=self.start_export,
-            style=Pack(margin_top=8),
+            style=Pack(margin_top=10),
         )
         self.export_btn.enabled = False
         self.cancel_btn = toga.Button(
-            "Cancel", on_press=self.cancel, style=Pack(margin_top=8, margin_left=8)
+            "Cancel", on_press=self.cancel, style=Pack(margin_top=10, margin_left=8)
         )
         # Backward compatibility for tests/helpers that still reference start_btn.
         self.start_btn = self.tokenize_btn
@@ -192,37 +222,75 @@ class PolishVocabApp(
 
         self.tokenization_section_label = toga.Label(
             "1) Tokenization",
-            style=Pack(font_size=16, font_weight="bold"),
+            style=Pack(font_size=18, font_weight="bold"),
         )
         self.listing_separator = toga.Box(
-            style=Pack(height=1, background_color="#b8b8b8", margin_top=12, margin_bottom=6)
+            style=Pack(
+                height=1,
+                background_color=self.COLOR_DIVIDER,
+                margin_top=14,
+                margin_bottom=8,
+            )
         )
         self.listing_section_label = toga.Label(
             "2) Listing + Export",
-            style=Pack(font_size=16, font_weight="bold"),
+            style=Pack(font_size=18, font_weight="bold"),
         )
 
-        main_box = toga.Box(style=Pack(direction=COLUMN, margin=12))
-        main_box.add(self.tokenization_section_label)
+        self.tokenization_card = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin_top=8,
+                background_color=self.COLOR_BG_CARD,
+            )
+        )
         self.sources_label = toga.Label("Files and links", style=Pack(margin_top=4))
-        main_box.add(self.sources_label)
-        main_box.add(self.file_list)
-        main_box.add(file_actions_row)
-        main_box.add(top_row)
-        main_box.add(self.tokenize_button_row)
+        self.tokenization_card.add(self.sources_label)
+        self.tokenization_card.add(self.file_list)
+        self.tokenization_card.add(file_actions_row)
+        self.tokenization_card.add(top_row)
+        self.tokenization_card.add(self.tokenize_button_row)
 
+        self.listing_card = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin_top=6,
+                background_color=self.COLOR_BG_CARD,
+            )
+        )
+        self.listing_card.add(export_options_box)
+        self.listing_card.add(self.zipf_box)
+        self.listing_card.add(self.export_button_row)
+
+        self.output_card = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin_top=8,
+                background_color=self.COLOR_BG_CARD,
+            )
+        )
+        self.output_card.add(self.progress)
+        self.output_card.add(toga.Label("Log", style=Pack(margin_top=8, font_size=14)))
+        self.output_card.add(self.log_box)
+
+        main_box = toga.Box(
+            style=Pack(direction=COLUMN, margin=12, background_color=self.COLOR_BG_APP)
+        )
+        main_box.add(self.tokenization_section_label)
+        main_box.add(self.tokenization_card)
         main_box.add(self.listing_separator)
         main_box.add(self.listing_section_label)
-        main_box.add(export_options_box)
-        main_box.add(self.zipf_box)
-        main_box.add(self.export_button_row)
+        main_box.add(self.listing_card)
+        main_box.add(self.output_card)
 
-        main_box.add(self.progress)
-        main_box.add(toga.Label("Log", style=Pack(margin_top=8)))
-        main_box.add(self.log_box)
-
-        self.preview_box = toga.Box(style=Pack(direction=COLUMN, margin=12))
-        self.preview_box.add(toga.Label("Top List Preview"))
+        self.preview_box = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin=12,
+                background_color=self.COLOR_BG_PREVIEW,
+            )
+        )
+        self.preview_box.add(toga.Label("Top List Preview", style=Pack(font_size=16, font_weight="bold")))
         self.preview_text = toga.MultilineTextInput(
             readonly=True,
             value="Preview updates after tokenization.",
@@ -230,6 +298,8 @@ class PolishVocabApp(
                 flex=1,
                 font_family=["SF Mono", "Menlo", "Monaco", "Courier New", "monospace"],
                 font_size=11,
+                margin_top=6,
+                background_color=self.COLOR_BG_INPUT,
             ),
         )
         self.preview_box.add(self.preview_text)
@@ -240,7 +310,7 @@ class PolishVocabApp(
             content=main_box,
             horizontal=False,
             vertical=True,
-            style=Pack(flex=1),
+            style=Pack(flex=1, background_color=self.COLOR_BG_APP),
         )
         self.split = toga.SplitContainer(
             direction=Direction.VERTICAL,
